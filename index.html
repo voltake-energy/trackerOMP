@@ -49,7 +49,7 @@ const { useState, useEffect, useCallback, useMemo } = React;
 // ============================================================
 // !!! WAJIB TUKAR: paste Google Apps Script Web App URL kau di sini
 // ============================================================
-const API_BASE_URL = "https://script.google.com/macros/s/AKfycbzSUKQdVcbf-DQDOOnsmugL4OtNrZYmKJ2BSoLhQOc6VPT03jYuRUU4qCNSw_6mVn1i/exec";
+const API_BASE_URL = "https://script.google.com/macros/s/AKfycbwbtOulH2UPGLPRIkvGKHkXmJWdb0aNtmstu2v0Fsz3O6qhwz3SfrfZOEV3ZeL7sBiY/exec";
 
 const DAY_KEYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const DAY_LABELS = { Mon: 'Isnin', Tue: 'Selasa', Wed: 'Rabu', Thu: 'Khamis', Fri: 'Jumaat', Sat: 'Sabtu', Sun: 'Ahad' };
@@ -350,7 +350,7 @@ function ManagerDashboard({ user, lists, weekStart, setWeekStart, goTo }) {
             {[
               { c: '#059669', v: t.updatesSubmitted, l: 'Dihantar' },
               { c: '#1d4ed8', v: t.updatesMissing, l: 'Belum hantar' },
-              { c: '#e5342b', v: critical, l: 'Kritikal' },
+              { c: '#e5342b', v: t.leaveGaps || 0, l: 'Cuti tiada ganti' },
             ].map((s) => (
               <div key={s.l}>
                 <div className="h-1.5 rounded-full mb-2" style={{ background: s.c }}></div>
@@ -376,7 +376,7 @@ function ManagerDashboard({ user, lists, weekStart, setWeekStart, goTo }) {
               <h2 className="text-lg font-extrabold">Plant perlu perhatian</h2>
               <p className="text-blue-200 text-xs mt-0.5">{t.totalAttentionItems} permohonan terbuka daripada {t.plants} plant</p>
             </div>
-            <Btn tone="white" size="sm" onClick={() => goTo('Attention')}>Lihat semua</Btn>
+            <Btn tone="white" size="sm" onClick={() => goTo('Permohonan')}>Lihat semua</Btn>
           </div>
           <div className="grid sm:grid-cols-3 gap-3">
             {needAttention.slice(0, 3).map((s) => (
@@ -394,7 +394,7 @@ function ManagerDashboard({ user, lists, weekStart, setWeekStart, goTo }) {
 
         <div className="grid lg:grid-cols-2 gap-4">
           <Card>
-            <SectionTitle action={<Btn size="sm" tone="ghost" onClick={() => goTo('Manpower')}>Manpower</Btn>}>Plant memerlukan perhatian</SectionTitle>
+            <SectionTitle action={<Btn size="sm" tone="ghost" onClick={() => goTo('Jadual')}>Jadual</Btn>}>Plant memerlukan perhatian</SectionTitle>
             {needAttention.map((s) => (
               <BarRow key={s.plant} label={s.plant} value={s.attentionItems}
                 max={Math.max(...data.summary.map(x => x.attentionItems), 1)}
@@ -403,7 +403,7 @@ function ManagerDashboard({ user, lists, weekStart, setWeekStart, goTo }) {
           </Card>
 
           <Card>
-            <SectionTitle action={<Btn size="sm" tone="ghost" onClick={() => goTo('Attention')}>Lihat semua</Btn>}>Perlu tindakan</SectionTitle>
+            <SectionTitle action={<Btn size="sm" tone="ghost" onClick={() => goTo('Permohonan')}>Lihat semua</Btn>}>Perlu tindakan</SectionTitle>
             {data.actionItems.length === 0 ? <Empty text="Tiada item tertunggak." /> : (
               <div className="space-y-1">
                 {data.actionItems.slice(0, 4).map((a) => (
@@ -421,28 +421,26 @@ function ManagerDashboard({ user, lists, weekStart, setWeekStart, goTo }) {
         </div>
 
         <Card>
-          <SectionTitle>Headcount harian ikut plant</SectionTitle>
+          <SectionTitle action={<Btn size="sm" tone="ghost" onClick={() => goTo('Jadual')}>Buka jadual</Btn>}>Headcount harian ikut plant (minggu ni)</SectionTitle>
           <div className="overflow-x-auto no-bar -mx-1 px-1">
             <table className="w-full text-sm min-w-[620px]">
               <thead>
                 <tr className="text-[11px] uppercase tracking-wide text-slate-400">
                   <th className="text-left font-bold pb-2 pl-1">Plant</th>
-                  {DAY_KEYS.map(d => <th key={d} className="font-bold pb-2 px-1 text-center">{DAY_SHORT[d]}</th>)}
+                  {(data.weekDates || []).map((iso, i) => <th key={iso} className="font-bold pb-2 px-1 text-center">{DAY_SHORT[DAY_KEYS[i]]}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {data.summary.map((s) => (
                   <tr key={s.plant} className="border-t border-slate-100">
                     <td className="py-2.5 pl-1 font-semibold text-slate-700 whitespace-nowrap">{s.plant}</td>
-                    {s.headcount === 'NOT UPDATED'
-                      ? <td colSpan={7} className="text-center py-2.5 text-[12px] text-slate-400 font-semibold">BELUM DIKEMASKINI</td>
-                      : DAY_KEYS.map(d => (
-                        <td key={d} className="text-center py-2.5">
-                          <span className={`inline-block w-7 h-7 leading-7 rounded-lg text-[12.5px] font-bold ${s.headcount[d] < 2 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-700'}`}>
-                            {s.headcount[d]}
-                          </span>
-                        </td>
-                      ))}
+                    {(data.weekDates || []).map(iso => (
+                      <td key={iso} className="text-center py-2.5">
+                        <span className={`inline-block w-7 h-7 leading-7 rounded-lg text-[12.5px] font-bold ${(s.headcount[iso] || 0) === 0 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-700'}`}>
+                          {s.headcount[iso] !== undefined ? s.headcount[iso] : '-'}
+                        </span>
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
@@ -477,7 +475,7 @@ function PlantDashboard({ user, lists, weekStart, setWeekStart, goTo }) {
   useEffect(() => { load(); }, [load]);
 
   if (loading || !data) return <Spinner />;
-  const s = data.summary[0] || { weeklyUpdate: 'NO', attentionItems: 0, oldestPending: 0, hqPending: 0, headcount: 'NOT UPDATED' };
+  const s = data.summary[0] || { weeklyUpdate: 'NO', attentionItems: 0, oldestPending: 0, hqPending: 0, headcount: {}, openLeaveGaps: 0, lowestHeadcount: 0 };
   const open = attn.filter(r => !['completed', 'closed'].includes(String(r.Status).toLowerCase()));
   const done = attn.length - open.length;
 
@@ -541,9 +539,9 @@ function PlantDashboard({ user, lists, weekStart, setWeekStart, goTo }) {
             <HeroRow label="Update mingguan" sub="Generation · Equipment · Routine O&M"
               badge={s.weeklyUpdate === 'YES' ? 'Siap' : 'Belum isi'} done={s.weeklyUpdate === 'YES'}
               onClick={() => goTo('Update Mingguan')} />
-            <HeroRow label="Manpower mingguan" sub="Isnin hingga Ahad · rekod replacement"
-              badge={s.headcount === 'NOT UPDATED' ? 'Belum isi' : 'Siap'} done={s.headcount !== 'NOT UPDATED'}
-              onClick={() => goTo('Manpower')} />
+            <HeroRow label="Jadual & relief" sub={`Headcount terendah minggu ni: ${s.lowestHeadcount} orang`}
+              badge={s.openLeaveGaps > 0 ? `${s.openLeaveGaps} tiada ganti` : 'OK'} done={!s.openLeaveGaps}
+              onClick={() => goTo('Jadual')} />
             <HeroRow label="Permohonan equipment" sub="Semak keberadaan &amp; tarikh tool"
               badge="Buka" done={false} onClick={() => goTo('Equipment')} />
           </div>
@@ -589,10 +587,10 @@ function HqDashboard({ user, lists, goTo }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await api('listHqTasks', { mineOnly: true });
+    const res = await api('listHqTasks', { assignedTo: user.name });
     if (res.ok) setRows(res.rows);
     setLoading(false);
-  }, []);
+  }, [user.name]);
   useEffect(() => { load(); }, [load]);
 
   if (loading) return <Spinner />;
@@ -656,10 +654,12 @@ const ROW_LABELS = [
 ];
 function WeeklyUpdateView({ user, lists, weekStart, setWeekStart }) {
   const isPlant = user.role === 'Supervisor';
+  const isManager = user.role === 'Manager';
   const [plant, setPlant] = useState(isPlant ? user.plant : (lists.plants[0] || ''));
   const [rows, setRows] = useState([]);
+  const [meta, setMeta] = useState({ reviewedBy: '', submittedAt: '' });
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [editIdx, setEditIdx] = useState(null);
   const [msg, setMsg] = useState('');
 
   const load = useCallback(async () => {
@@ -674,22 +674,34 @@ function WeeklyUpdateView({ user, lists, weekStart, setWeekStart }) {
         thisWeekPriority: byType[n]?.ThisWeekPriority || '',
         remarks: byType[n]?.Remarks || '',
       })));
+      setMeta({ reviewedBy: res.reviewedBy || '', submittedAt: res.submittedAt || '' });
     }
     setLoading(false);
   }, [weekStart, plant]);
   useEffect(() => { load(); }, [load]);
 
-  const upd = (i, f, v) => setRows(p => p.map((r, x) => x === i ? { ...r, [f]: v } : r));
-  const save = async () => {
-    setSaving(true); setMsg('');
-    const res = await api('saveSupervisorUpdate', { weekStart, weekEnd: addDays(weekStart, 6), plant, supervisor: user.name, rows });
-    setSaving(false);
-    setMsg(res.ok ? '✓ Berjaya disimpan' : (res.error || 'Gagal simpan'));
-    setTimeout(() => setMsg(''), 4000);
+  const saveRow = async (idx, values) => {
+    const next = rows.map((r, i) => i === idx ? { ...r, ...values } : r);
+    setRows(next);
+    setEditIdx(null);
+    const res = await api('saveSupervisorUpdate', { weekStart, weekEnd: addDays(weekStart, 6), plant, rows: next });
+    setMsg(res.ok ? 'Disimpan' : (res.error || 'Gagal simpan'));
+    setTimeout(() => setMsg(''), 3500);
+    load();
   };
 
+  const review = async () => {
+    const res = await api('reviewSupervisorUpdate', { weekStart, plant });
+    if (!res.ok) return alert(res.error);
+    setMsg('Ditanda telah disemak');
+    setTimeout(() => setMsg(''), 3500);
+    load();
+  };
+
+  const filled = rows.some(r => r.lastWeekOutcome || r.thisWeekPriority);
+
   return (
-    <div className="max-w-3xl mx-auto space-y-4">
+    <div className="max-w-5xl mx-auto space-y-4">
       <Card>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -705,38 +717,81 @@ function WeeklyUpdateView({ user, lists, weekStart, setWeekStart }) {
             <WeekPicker value={weekStart} onChange={setWeekStart} />
           </div>
         </div>
-        <p className="text-[12px] text-slate-500 mt-3 bg-blue-50/60 rounded-xl px-3 py-2">
-          Tulis result + sebab / tindakan, bukan setakat "Done" atau "Pending". Kalau tak berkenaan, tulis N/A.
-        </p>
+        <div className="flex flex-wrap items-center gap-2 mt-3">
+          {meta.reviewedBy
+            ? <Pill className="bg-emerald-50 text-emerald-700">Telah disemak · {meta.reviewedBy}</Pill>
+            : filled ? <Pill className="bg-amber-50 text-amber-700">Menunggu semakan manager</Pill>
+              : <Pill className="bg-rose-50 text-rose-600">Belum dihantar</Pill>}
+          {meta.submittedAt && <span className="text-[11.5px] text-slate-400">Dihantar {fmtDate(meta.submittedAt)}</span>}
+          {msg && <span className="text-[12.5px] font-bold text-emerald-600">{msg}</span>}
+        </div>
+        {isPlant && <p className="text-[12px] text-slate-500 mt-3 bg-blue-50/60 rounded-xl px-3 py-2">Klik mana-mana baris untuk edit. Tulis result + sebab / tindakan, bukan setakat "Done".</p>}
+        {isManager && <p className="text-[12px] text-slate-500 mt-3 bg-slate-50 rounded-xl px-3 py-2">Manager pantau sahaja — pengisian dibuat oleh supervisor plant.</p>}
       </Card>
 
       {loading ? <Spinner /> : (
-        <React.Fragment>
-          {rows.map((r, i) => (
-            <Card key={r.rowType}>
-              <div className="flex items-center gap-2 mb-3">
-                <span className="w-7 h-7 rounded-full bg-[#0b2a66] text-white text-[12px] font-extrabold flex items-center justify-center">{r.rowType}</span>
-                <h3 className="font-extrabold text-[14px] text-slate-800">{ROW_LABELS[i].title}</h3>
-              </div>
-              <p className="text-[11.5px] text-slate-400 mb-3">{ROW_LABELS[i].hint}</p>
-              <Field label="Outcome minggu lepas">
-                <textarea className={inputCls} rows={2} value={r.lastWeekOutcome} onChange={(e) => upd(i, 'lastWeekOutcome', e.target.value)} />
-              </Field>
-              <Field label="Priority minggu ini">
-                <textarea className={inputCls} rows={2} value={r.thisWeekPriority} onChange={(e) => upd(i, 'thisWeekPriority', e.target.value)} />
-              </Field>
-              <Field label="Remarks">
-                <input className={inputCls} value={r.remarks} onChange={(e) => upd(i, 'remarks', e.target.value)} />
-              </Field>
-            </Card>
-          ))}
-          <div className="flex items-center gap-3 pb-4">
-            <Btn size="lg" onClick={save} disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan update'}</Btn>
-            {msg && <span className="text-sm font-semibold text-emerald-600">{msg}</span>}
+        <Card pad="p-0">
+          <div className="overflow-x-auto no-bar">
+            <table className="w-full text-[13px] min-w-[760px]">
+              <thead>
+                <tr className="text-[10.5px] uppercase tracking-wide text-slate-400 border-b border-slate-100">
+                  <th className="text-left font-bold px-4 py-3 w-[190px]">Fokus</th>
+                  <th className="text-left font-bold px-3 py-3">Outcome minggu lepas</th>
+                  <th className="text-left font-bold px-3 py-3">Priority minggu ini</th>
+                  <th className="text-left font-bold px-3 py-3 w-[140px]">Remarks</th>
+                  {isPlant && <th className="px-3 py-3 w-[70px]"></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={r.rowType}
+                    className={'border-b border-slate-50 align-top ' + (isPlant ? 'cursor-pointer hover:bg-blue-50/40' : '')}
+                    onClick={() => isPlant && setEditIdx(i)}>
+                    <td className="px-4 py-3">
+                      <div className="flex items-start gap-2">
+                        <span className="w-6 h-6 shrink-0 rounded-full bg-[#0b2a66] text-white text-[11px] font-extrabold flex items-center justify-center">{r.rowType}</span>
+                        <span className="font-bold text-slate-800 leading-tight">{ROW_LABELS[i].title}</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-slate-600">{r.lastWeekOutcome || <span className="text-slate-300">—</span>}</td>
+                    <td className="px-3 py-3 text-slate-600">{r.thisWeekPriority || <span className="text-slate-300">—</span>}</td>
+                    <td className="px-3 py-3 text-slate-500">{r.remarks || <span className="text-slate-300">—</span>}</td>
+                    {isPlant && <td className="px-3 py-3"><span className="text-[12px] font-bold text-[#1d4ed8]">Edit</span></td>}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </React.Fragment>
+          {isManager && (
+            <div className="p-4 border-t border-slate-100 flex flex-wrap items-center gap-3">
+              <Btn onClick={review} disabled={!filled || !!meta.reviewedBy}>
+                {meta.reviewedBy ? 'Sudah disemak' : 'Tandakan telah disemak'}
+              </Btn>
+              <span className="text-[11.5px] text-slate-400">Manager tidak boleh mengubah isi update plant.</span>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {editIdx !== null && (
+        <WeeklyRowModal row={rows[editIdx]} label={ROW_LABELS[editIdx]}
+          onClose={() => setEditIdx(null)} onSave={(v) => saveRow(editIdx, v)} />
       )}
     </div>
+  );
+}
+
+function WeeklyRowModal({ row, label, onClose, onSave }) {
+  const [f, setF] = useState({ lastWeekOutcome: row.lastWeekOutcome, thisWeekPriority: row.thisWeekPriority, remarks: row.remarks });
+  const [saving, setSaving] = useState(false);
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+  return (
+    <Modal title={label.title} subtitle={label.hint} onClose={onClose} wide>
+      <Field label="Outcome minggu lepas"><textarea className={inputCls} rows={3} value={f.lastWeekOutcome} onChange={(e) => set('lastWeekOutcome', e.target.value)} autoFocus /></Field>
+      <Field label="Priority minggu ini"><textarea className={inputCls} rows={3} value={f.thisWeekPriority} onChange={(e) => set('thisWeekPriority', e.target.value)} /></Field>
+      <Field label="Remarks"><input className={inputCls} value={f.remarks} onChange={(e) => set('remarks', e.target.value)} /></Field>
+      <Btn size="lg" className="w-full" disabled={saving} onClick={() => { setSaving(true); onSave(f); }}>{saving ? 'Menyimpan…' : 'Simpan'}</Btn>
+    </Modal>
   );
 }
 
@@ -745,7 +800,7 @@ function WeeklyUpdateView({ user, lists, weekStart, setWeekStart }) {
 // ============================================================
 function AttentionView({ user, lists, goTo }) {
   const isPlant = user.role === 'Supervisor';
-  const canAssign = user.role === 'Manager' || user.role === 'Admin';
+  const canAssign = user.role === 'Manager';
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [plantFilter, setPlantFilter] = useState('ALL');
@@ -1005,6 +1060,7 @@ function TaskRow({ r, onClick }) {
           <Pill className={`${tone.bg} ${tone.text}`}>{tone.label}</Pill>
           <Pill className={`bg-slate-100 ${statusTone(r.Status)}`}>{r.Status}</Pill>
           {r.DelayDays > 0 && <Pill className="bg-rose-50 text-rose-600">Lewat {r.DelayDays}h</Pill>}
+          {r.CanEdit === false && <Pill className="bg-slate-100 text-slate-500">Baca sahaja</Pill>}
         </div>
         <div className="text-[13px] text-slate-600 mt-1">{r.TaskAction}</div>
         <div className="text-[11.5px] text-slate-400 mt-1">
@@ -1023,14 +1079,14 @@ function HqTasksView({ user, lists }) {
   const [mineOnly, setMineOnly] = useState(user.role === 'HQ');
   const [editRow, setEditRow] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
-  const canAdd = user.role === 'Manager' || user.role === 'Admin';
+  const canAdd = user.role === 'Manager';
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await api('listHqTasks', { plantFilter, mineOnly });
+    const res = await api('listHqTasks', { plantFilter, assignedTo: mineOnly ? user.name : '' });
     if (res.ok) setRows(res.rows);
     setLoading(false);
-  }, [plantFilter, mineOnly]);
+  }, [plantFilter, mineOnly, user.name]);
   useEffect(() => { load(); }, [load]);
 
   return (
@@ -1062,7 +1118,7 @@ function HqTasksView({ user, lists }) {
       <Card>
         {loading ? <Spinner /> : rows.length === 0 ? <Empty text="Tiada tugasan." /> : (
           <div className="divide-y divide-slate-100">
-            {rows.map(r => <TaskRow key={r.ID} r={r} onClick={() => setEditRow(r)} />)}
+            {rows.map(r => <TaskRow key={r.ID} r={r} onClick={() => r.CanEdit ? setEditRow(r) : null} />)}
           </div>
         )}
       </Card>
@@ -1145,8 +1201,8 @@ function HqTaskModal({ row, lists, onClose, onSaved }) {
 // EQUIPMENT MOBILISATION
 // ============================================================
 function EquipmentView({ user, lists }) {
-  const isPlant = user.role === 'Supervisor';
-  const canManage = user.role !== 'Supervisor';
+  const isManager = user.role === 'Manager';
+  const canRequest = user.role === 'Supervisor' || user.role === 'Manager';
   const [equip, setEquip] = useState([]);
   const [reqs, setReqs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1165,7 +1221,7 @@ function EquipmentView({ user, lists }) {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const statusColor = (s) => {
+  const eqStatusTone = (s) => {
     const v = String(s).toLowerCase();
     if (v === 'available') return 'bg-emerald-50 text-emerald-700';
     if (v === 'in use') return 'bg-blue-50 text-blue-700';
@@ -1175,47 +1231,71 @@ function EquipmentView({ user, lists }) {
     return 'bg-slate-100 text-slate-600';
   };
 
+  const activeReqs = reqs.filter(r => ['Returned', 'Rejected'].indexOf(String(r.Status)) === -1);
+
   return (
     <div className="max-w-5xl mx-auto space-y-4">
       <Card>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="font-extrabold text-slate-800">Mobilisasi equipment</h2>
-            <p className="text-xs text-slate-500 mt-0.5">Semak keberadaan tool &amp; tarikh sebelum mohon mobilisasi</p>
+            <p className="text-xs text-slate-500 mt-0.5">Semua plant nampak keberadaan tool &amp; queue — tiada potong queue</p>
           </div>
-          {canManage && tab === 'tools' && <Btn onClick={() => setShowEquipAdd(true)}>+ Equipment</Btn>}
+          {isManager && tab === 'tools' && <Btn onClick={() => setShowEquipAdd(true)}>+ Equipment</Btn>}
         </div>
         <div className="flex gap-2 mt-4">
-          {[['tools', 'Keberadaan tool'], ['requests', `Permohonan (${reqs.filter(r => !['Returned', 'Rejected'].includes(String(r.Status))).length})`]].map(([k, l]) => (
+          {[['tools', 'Keberadaan tool'], ['requests', `Permohonan (${activeReqs.length})`]].map(([k, l]) => (
             <button key={k} onClick={() => setTab(k)}
-              className={`px-3.5 py-1.5 rounded-full text-[12.5px] font-bold ${tab === k ? 'bg-[#0b2a66] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{l}</button>
+              className={'px-3.5 py-1.5 rounded-full text-[12.5px] font-bold ' + (tab === k ? 'bg-[#0b2a66] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}>{l}</button>
           ))}
         </div>
+        {!isManager && <p className="text-[11.5px] text-slate-400 mt-3">Manager (superadmin) sahaja boleh ubah jadual, status dan susunan queue equipment.</p>}
       </Card>
 
       {loading ? <Spinner /> : tab === 'tools' ? (
         equip.length === 0 ? <Card><Empty text="Belum ada equipment didaftarkan." /></Card> : (
           <div className="grid sm:grid-cols-2 gap-3">
-            {equip.map((r) => (
-              <Card key={r.ID} pad="p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="font-extrabold text-slate-800 text-[14.5px] truncate">{r.EquipmentUnit}</div>
-                    <div className="text-[12px] text-slate-500 mt-0.5">Sekarang di: <b className="text-slate-700">{r.CurrentPlant || '-'}</b></div>
+            {equip.map((r) => {
+              const myQueuePos = r.Queue.findIndex(q => q.plant === user.plant);
+              return (
+                <Card key={r.ID} pad="p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-extrabold text-slate-800 text-[14.5px] truncate">{r.EquipmentUnit}</div>
+                      <div className="text-[12px] text-slate-500 mt-0.5">Sekarang di: <b className="text-slate-700">{r.CurrentPlant || '-'}</b></div>
+                    </div>
+                    <Pill className={eqStatusTone(r.Status)}>{r.Status}</Pill>
                   </div>
-                  <Pill className={statusColor(r.Status)}>{r.Status}</Pill>
-                </div>
-                <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-slate-100 text-[11.5px]">
-                  <div><div className="text-slate-400">Jangka siap</div><div className="font-semibold text-slate-700">{fmtDate(r.PlannedFinish)}</div></div>
-                  <div><div className="text-slate-400">Queue seterusnya</div><div className="font-semibold text-slate-700">{r.NextRequestingPlant || '—'}</div></div>
-                </div>
-                {r.HQLogisticsContact && <div className="text-[11.5px] text-slate-400 mt-2">Logistik HQ: {r.HQLogisticsContact}</div>}
-                <div className="flex gap-2 mt-3">
-                  <Btn size="sm" tone="outline" onClick={() => setRequestFor(r)}>Mohon mobilisasi</Btn>
-                  {canManage && <Btn size="sm" tone="ghost" onClick={() => setEditEquip(r)}>Kemaskini</Btn>}
-                </div>
-              </Card>
-            ))}
+
+                  <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-slate-100 text-[11.5px]">
+                    <div><div className="text-slate-400">Jangka siap</div><div className="font-semibold text-slate-700">{fmtDate(r.PlannedFinish)}</div></div>
+                    <div><div className="text-slate-400">Logistik HQ</div><div className="font-semibold text-slate-700">{r.HQLogisticsContact || '—'}</div></div>
+                  </div>
+
+                  <div className="mt-3 pt-3 border-t border-slate-100">
+                    <div className="text-[10.5px] font-bold uppercase tracking-wide text-slate-400 mb-1.5">Queue</div>
+                    {r.Queue.length === 0 ? <div className="text-[12px] text-slate-400">Tiada plant dalam queue</div> : (
+                      <div className="space-y-1">
+                        {r.Queue.map(q => (
+                          <div key={q.id} className="flex items-center gap-2 text-[12px]">
+                            <span className={'w-5 h-5 rounded-full text-[10px] font-extrabold flex items-center justify-center ' + (q.position === 1 ? 'bg-[#1d4ed8] text-white' : 'bg-slate-200 text-slate-600')}>{q.position}</span>
+                            <span className={'font-semibold ' + (q.plant === user.plant ? 'text-[#1d4ed8]' : 'text-slate-700')}>{q.plant}</span>
+                            <span className="text-slate-400">· mohon {fmtDateShort(q.requestDate)}</span>
+                            <span className="text-slate-400">· {q.status}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {myQueuePos >= 0 && <div className="text-[11.5px] text-[#1d4ed8] font-bold mt-2">Plant anda di kedudukan #{myQueuePos + 1} dalam queue</div>}
+                  </div>
+
+                  <div className="flex gap-2 mt-3">
+                    {canRequest && <Btn size="sm" tone="outline" onClick={() => setRequestFor(r)}>Mohon mobilisasi</Btn>}
+                    {isManager && <Btn size="sm" tone="ghost" onClick={() => setEditEquip(r)}>Ubah jadual</Btn>}
+                  </div>
+                </Card>
+              );
+            })}
           </div>
         )
       ) : (
@@ -1227,15 +1307,16 @@ function EquipmentView({ user, lists }) {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-mono text-[11px] font-bold text-slate-400">{r.ID}</span>
-                      <Pill className={`bg-slate-100 ${statusTone(r.Status)}`}>{r.Status}</Pill>
+                      <Pill className={'bg-slate-100 ' + statusTone(r.Status)}>{r.Status}</Pill>
+                      {r.RequestingPlant === user.plant && <Pill className="bg-blue-50 text-blue-700">Plant anda</Pill>}
                     </div>
                     <div className="font-bold text-slate-800 text-[14px] mt-1.5">{r.EquipmentUnit}</div>
                     <div className="text-[12px] text-slate-500 mt-0.5">
-                      {r.RequestingPlant} · mohon {fmtDate(r.RequestDate)} · perlu {fmtDate(r.NeededDate)}
+                      {r.RequestingPlant} · {r.RequestedBy} · mohon {fmtDate(r.RequestDate)}{r.NeededDate ? ' · perlu ' + fmtDate(r.NeededDate) : ''}
                     </div>
                     {r.Remarks && <div className="text-[12px] text-slate-500 mt-1">{r.Remarks}</div>}
                   </div>
-                  {canManage && <Btn size="sm" onClick={() => setEditReq(r)}>Urus</Btn>}
+                  {isManager && <Btn size="sm" onClick={() => setEditReq(r)}>Urus</Btn>}
                 </div>
               </Card>
             ))}
@@ -1272,20 +1353,25 @@ function EquipmentModal({ row, lists, onClose, onSaved }) {
   };
 
   return (
-    <Modal title={row ? 'Kemaskini equipment' : 'Tambah equipment'} onClose={onClose}>
+    <Modal title={row ? 'Ubah jadual equipment' : 'Tambah equipment'} onClose={onClose}>
       <Field label="Equipment / Unit">
-        <input className={inputCls} value={f.EquipmentUnit} onChange={(e) => set('EquipmentUnit', e.target.value)} list="eqList" />
-        <datalist id="eqList">{lists.equipmentNames.map(n => <option key={n} value={n} />)}</datalist>
+        <select className={inputCls} value={f.EquipmentUnit} onChange={(e) => set('EquipmentUnit', e.target.value)}>
+          {lists.equipmentNames.map(n => <option key={n}>{n}</option>)}
+        </select>
       </Field>
       <Field label="Plant semasa"><select className={inputCls} value={f.CurrentPlant} onChange={(e) => set('CurrentPlant', e.target.value)}>{lists.plants.map(p => <option key={p}>{p}</option>)}</select></Field>
       <Field label="Status"><select className={inputCls} value={f.Status} onChange={(e) => set('Status', e.target.value)}>{lists.equipmentStatuses.map(s => <option key={s}>{s}</option>)}</select></Field>
       <Field label="Jangka siap guna"><input type="date" className={inputCls} value={f.PlannedFinish} onChange={(e) => set('PlannedFinish', e.target.value)} /></Field>
-      <Field label="Plant seterusnya dalam queue">
+      <Field label="Plant seterusnya (queue)" hint="Biasanya ikut susunan permohonan — ubah hanya bila perlu">
         <select className={inputCls} value={f.NextRequestingPlant} onChange={(e) => set('NextRequestingPlant', e.target.value)}>
           <option value="">—</option>{lists.plants.map(p => <option key={p}>{p}</option>)}
         </select>
       </Field>
-      <Field label="Kontak logistik HQ"><input className={inputCls} value={f.HQLogisticsContact} onChange={(e) => set('HQLogisticsContact', e.target.value)} /></Field>
+      <Field label="Logistik HQ" hint="Ambil daripada akaun berperanan HQ">
+        <select className={inputCls} value={f.HQLogisticsContact} onChange={(e) => set('HQLogisticsContact', e.target.value)}>
+          <option value="">—</option>{lists.hqMembers.map(m => <option key={m}>{m}</option>)}
+        </select>
+      </Field>
       <Field label="Remarks"><input className={inputCls} value={f.Remarks} onChange={(e) => set('Remarks', e.target.value)} /></Field>
       <Btn size="lg" className="w-full" onClick={save} disabled={saving || !f.EquipmentUnit}>{saving ? 'Menyimpan…' : 'Simpan'}</Btn>
     </Modal>
@@ -1301,22 +1387,27 @@ function EquipRequestModal({ equipment, user, lists, onClose, onSaved }) {
 
   const save = async () => {
     setSaving(true);
-    const res = await api('addEquipmentRequest', {
-      equipmentUnit: equipment.EquipmentUnit, requestingPlant: plant, neededDate, remarks,
-    });
+    const res = await api('addEquipmentRequest', { equipmentUnit: equipment.EquipmentUnit, requestingPlant: plant, neededDate, remarks });
     setSaving(false);
     if (res.ok) onSaved(); else alert(res.error || 'Gagal hantar.');
   };
 
+  const queue = equipment.Queue || [];
   const busy = String(equipment.Status).toLowerCase() !== 'available';
 
   return (
     <Modal title="Mohon mobilisasi" subtitle={equipment.EquipmentUnit} onClose={onClose}>
-      <div className={`rounded-xl px-3 py-2.5 mb-4 text-[12.5px] ${busy ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-700'}`}>
+      <div className={'rounded-xl px-3 py-2.5 mb-3 text-[12.5px] ' + (busy ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-700')}>
         {busy
-          ? <span>Tool ni sedang <b>{equipment.Status}</b> di <b>{equipment.CurrentPlant}</b>{equipment.PlannedFinish ? `, jangka siap ${fmtDate(equipment.PlannedFinish)}` : ''}. Permohonan anda akan masuk queue.</span>
-          : <span>Tool tersedia di <b>{equipment.CurrentPlant}</b> — boleh mohon mobilisasi terus.</span>}
+          ? <span>Tool ni <b>{equipment.Status}</b> di <b>{equipment.CurrentPlant}</b>{equipment.PlannedFinish ? `, jangka siap ${fmtDate(equipment.PlannedFinish)}` : ''}.</span>
+          : <span>Tool tersedia di <b>{equipment.CurrentPlant}</b>.</span>}
       </div>
+      {queue.length > 0 && (
+        <div className="bg-slate-50 rounded-xl px-3 py-2.5 mb-3 text-[12px] text-slate-600">
+          <b>{queue.length} plant dah dalam queue:</b> {queue.map(q => `${q.position}. ${q.plant}`).join(' · ')}.
+          <br />Permohonan anda akan masuk di kedudukan #{queue.length + 1} — tiada potong queue.
+        </div>
+      )}
       {!isPlant && (
         <Field label="Plant pemohon"><select className={inputCls} value={plant} onChange={(e) => setPlant(e.target.value)}>{lists.plants.map(p => <option key={p}>{p}</option>)}</select></Field>
       )}
@@ -1335,9 +1426,7 @@ function EquipRequestManageModal({ row, lists, onClose, onSaved }) {
 
   const save = async () => {
     setSaving(true);
-    const res = await api('updateEquipmentRequest', {
-      id: row.ID, fields: { Status: status, MobilisationDate: mobDate, Remarks: remarks },
-    });
+    const res = await api('updateEquipmentRequest', { id: row.ID, fields: { Status: status, MobilisationDate: mobDate, Remarks: remarks } });
     setSaving(false);
     if (res.ok) onSaved(); else alert(res.error || 'Gagal simpan.');
   };
@@ -1349,7 +1438,7 @@ function EquipRequestManageModal({ row, lists, onClose, onSaved }) {
         {row.NeededDate ? ` · perlu ${fmtDate(row.NeededDate)}` : ''}
       </div>
       <Field label="Status"><select className={inputCls} value={status} onChange={(e) => setStatus(e.target.value)}>{lists.requestStatuses.map(s => <option key={s}>{s}</option>)}</select></Field>
-      <Field label="Tarikh mobilisasi" hint="Bila status = Mobilised, lokasi equipment akan auto berpindah ke plant pemohon.">
+      <Field label="Tarikh mobilisasi" hint="Bila status = Mobilised, lokasi tool berpindah ke plant pemohon dan queue seterusnya naik automatik.">
         <input type="date" className={inputCls} value={mobDate} onChange={(e) => setMobDate(e.target.value)} />
       </Field>
       <Field label="Remarks"><textarea className={inputCls} rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} /></Field>
@@ -1359,132 +1448,232 @@ function EquipRequestManageModal({ row, lists, onClose, onSaved }) {
 }
 
 // ============================================================
-// MANPOWER (Isnin – Ahad)
+// JADUAL & RELIEF
 // ============================================================
-function ManpowerView({ user, lists, weekStart, setWeekStart }) {
+const DOW_LETTER = ['A', 'I', 'S', 'R', 'K', 'J', 'S']; // Ahad, Isnin, Selasa, Rabu, Khamis, Jumaat, Sabtu
+
+function codeStyle(cell, isHoliday) {
+  if (cell.leave && !cell.relief) return 'bg-rose-500 text-white';
+  if (cell.leave && cell.relief) return 'bg-violet-100 text-violet-700 ring-1 ring-violet-300';
+  if (cell.code === '1') return 'bg-emerald-100 text-emerald-800';
+  if (cell.code === '2') return 'bg-amber-100 text-amber-800';
+  if (cell.code === 'Off') return 'bg-slate-100 text-slate-400';
+  if (cell.code === 'Rest') return 'bg-slate-200/70 text-slate-500';
+  return 'bg-slate-50 text-slate-400';
+}
+
+function ScheduleView({ user, lists }) {
   const isPlant = user.role === 'Supervisor';
-  const [plant, setPlant] = useState(isPlant ? user.plant : (lists.plants[0] || ''));
-  const [rows, setRows] = useState([]);
+  const canEdit = user.role === 'Supervisor' || user.role === 'Manager';
+  const [month, setMonth] = useState(toISO(new Date()).slice(0, 7));
+  const [plant, setPlant] = useState(isPlant ? user.plant : 'ALL');
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState('');
+  const [sel, setSel] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await api('getManpower', { weekStart, plant });
-    if (res.ok) {
-      setRows(res.rows.map(r => {
-        const o = { staffName: r.StaffName };
-        DAY_KEYS.forEach(d => { o[d] = r[d + 'Status'] || 'W'; o[d + 'Rep'] = r[d + 'Replacement'] || ''; });
-        return o;
-      }));
-    }
+    const res = await api('getSchedule', { month, plant });
+    if (res.ok) setData(res);
     setLoading(false);
-  }, [weekStart, plant]);
+  }, [month, plant]);
   useEffect(() => { load(); }, [load]);
 
-  const addStaff = () => {
-    const o = { staffName: '' };
-    DAY_KEYS.forEach(d => { o[d] = 'W'; o[d + 'Rep'] = ''; });
-    setRows(p => [...p, o]);
+  const shiftMonth = (n) => {
+    const [y, m] = month.split('-').map(Number);
+    const d = new Date(y, m - 1 + n, 1);
+    setMonth(toISO(d).slice(0, 7));
   };
-  const upd = (i, k, v) => setRows(p => p.map((r, x) => x === i ? { ...r, [k]: v } : r));
-  const del = (i) => setRows(p => p.filter((_, x) => x !== i));
-  const isRed = (r) => DAY_KEYS.some(d => r[d] && r[d] !== 'W' && r[d] !== 'OFF' && !r[d + 'Rep']);
-  const headcount = (d) => rows.filter(r => r[d] === 'W' || (r[d] && r[d] !== 'OFF' && r[d + 'Rep'])).length;
+  const monthLabel = () => {
+    const [y, m] = month.split('-').map(Number);
+    return new Date(y, m - 1, 1).toLocaleDateString('ms-MY', { month: 'long', year: 'numeric' });
+  };
 
-  const save = async () => {
-    setSaving(true); setMsg('');
-    const res = await api('saveManpower', { weekStart, plant, rows: rows.filter(r => r.staffName) });
-    setSaving(false);
-    setMsg(res.ok ? '✓ Berjaya disimpan' : (res.error || 'Gagal simpan'));
-    setTimeout(() => setMsg(''), 4000);
-  };
+  const reliefCount = data ? data.staff.reduce((a, s) => a + Object.values(s.cells).filter(c => c.leave).length, 0) : 0;
+  const gapCount = data ? data.staff.reduce((a, s) => a + Object.values(s.cells).filter(c => c.leave && !c.relief).length, 0) : 0;
 
   return (
-    <div className="max-w-5xl mx-auto space-y-4">
+    <div className="max-w-[1280px] mx-auto space-y-4">
       <Card>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="font-extrabold text-slate-800">Manpower mingguan</h2>
-            <p className="text-xs text-slate-500 mt-0.5">{plant} · {fmtDate(weekStart)} – {fmtDate(addDays(weekStart, 6))} (Isnin – Ahad)</p>
+            <h2 className="font-extrabold text-slate-800">Jadual &amp; relief</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Jadual tetap setahun (group A / B / C) — rekod relief bila ada cuti</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {!isPlant && (
               <select className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm" value={plant} onChange={(e) => setPlant(e.target.value)}>
+                <option value="ALL">Semua plant</option>
                 {lists.plants.map(p => <option key={p}>{p}</option>)}
               </select>
             )}
-            <WeekPicker value={weekStart} onChange={setWeekStart} />
+            <div className="flex items-center gap-2">
+              <button onClick={() => shiftMonth(-1)} className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 font-bold text-slate-600">‹</button>
+              <span className="text-sm font-bold text-slate-700 w-32 text-center capitalize">{monthLabel()}</span>
+              <button onClick={() => shiftMonth(1)} className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 font-bold text-slate-600">›</button>
+            </div>
           </div>
         </div>
-        <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 mt-4">
-          {DAY_KEYS.map(d => (
-            <div key={d} className="bg-slate-50 rounded-xl py-2 text-center">
-              <div className="text-[10px] font-bold text-slate-400 tracking-wide">{DAY_SHORT[d]}</div>
-              <div className={`text-[17px] font-extrabold ${headcount(d) < 2 ? 'text-rose-600' : 'text-slate-800'}`}>{headcount(d)}</div>
-            </div>
-          ))}
+        <div className="flex flex-wrap items-center gap-3 mt-4 text-[11.5px]">
+          <span className="flex items-center gap-1.5"><span className="w-5 h-5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold flex items-center justify-center">1</span> 7 pagi – 5 petang</span>
+          <span className="flex items-center gap-1.5"><span className="w-5 h-5 rounded bg-amber-100 text-amber-800 text-[10px] font-bold flex items-center justify-center">2</span> 9 pagi – 7 malam</span>
+          <span className="flex items-center gap-1.5"><span className="w-5 h-5 rounded bg-slate-100"></span> Off / Rest</span>
+          <span className="flex items-center gap-1.5"><span className="w-5 h-5 rounded bg-violet-100 ring-1 ring-violet-300"></span> Ada relief</span>
+          <span className="flex items-center gap-1.5"><span className="w-5 h-5 rounded bg-rose-500"></span> Cuti tanpa pengganti</span>
+          <span className="ml-auto text-slate-500">{reliefCount} relief bulan ni{gapCount > 0 ? ` · ${gapCount} belum ada pengganti` : ''}</span>
         </div>
-        <p className="text-[11.5px] text-slate-400 mt-3">W = kerja · OFF = rehat · AL/UL/EL/MC/OTHER = cuti. Headcount kira W + staf cuti yang ada replacement. Baris merah = cuti tanpa replacement.</p>
       </Card>
 
-      {loading ? <Spinner /> : (
-        <div className="space-y-3">
-          {rows.map((r, i) => (
-            <Card key={i} pad="p-4" className={isRed(r) ? '!border-rose-300 bg-rose-50/40' : ''}>
-              <div className="flex items-center gap-2 mb-3">
-                <input className={`${inputCls} font-bold`} placeholder="Nama staff" value={r.staffName} onChange={(e) => upd(i, 'staffName', e.target.value)} />
-                <button onClick={() => del(i)} className="text-rose-500 text-[12px] font-bold px-2 whitespace-nowrap">Buang</button>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
-                {DAY_KEYS.map(d => (
-                  <div key={d} className="border border-slate-200 rounded-xl p-2 bg-white">
-                    <div className="text-[10px] font-bold text-slate-400 mb-1.5 tracking-wide">{DAY_LABELS[d].toUpperCase()}</div>
-                    <select className="w-full text-[13px] font-semibold border border-slate-200 rounded-lg px-1.5 py-1.5 mb-1.5 bg-slate-50"
-                      value={r[d] || 'W'} onChange={(e) => upd(i, d, e.target.value)}>
-                      {lists.manpowerCodes.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                    <input placeholder="ganti" className="w-full text-[12px] border border-slate-200 rounded-lg px-1.5 py-1.5"
-                      value={r[d + 'Rep'] || ''} onChange={(e) => upd(i, d + 'Rep', e.target.value)} />
-                  </div>
+      {loading || !data ? <Spinner /> : (
+        <Card pad="p-0">
+          <div className="overflow-x-auto">
+            <table className="text-[12px] border-separate border-spacing-0">
+              <thead>
+                <tr>
+                  <th className="sticky left-0 z-10 bg-white text-left font-bold text-[10.5px] uppercase tracking-wide text-slate-400 px-4 py-3 border-b border-slate-100 min-w-[150px]">Staff</th>
+                  {data.days.map(d => (
+                    <th key={d.date} className={`px-0 py-2 border-b border-slate-100 min-w-[30px] ${data.holidays[d.date] ? 'bg-rose-50' : (d.dow === 0 ? 'bg-slate-50' : '')}`}>
+                      <div className="text-[9px] text-slate-400 font-bold">{DOW_LETTER[d.dow]}</div>
+                      <div className={`text-[11px] font-bold ${data.holidays[d.date] ? 'text-rose-600' : 'text-slate-600'}`}>{d.day}</div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.staff.map(s => (
+                  <tr key={s.plant + s.name}>
+                    <td className="sticky left-0 z-10 bg-white px-4 py-2 border-b border-slate-50">
+                      <div className="font-bold text-slate-800 text-[12.5px] leading-tight">{s.name}</div>
+                      <div className="text-[10.5px] text-slate-400">{s.plant} · Grup {s.group}</div>
+                    </td>
+                    {data.days.map(d => {
+                      const c = s.cells[d.date];
+                      const clickable = canEdit && c.working;
+                      return (
+                        <td key={d.date} className={`p-0.5 border-b border-slate-50 text-center ${data.holidays[d.date] ? 'bg-rose-50/50' : ''}`}>
+                          <button disabled={!clickable}
+                            onClick={() => setSel({ staff: s, date: d.date, cell: c })}
+                            title={c.leave ? `${c.leave}${c.relief ? ' — relief: ' + c.relief : ' — TIADA pengganti'}` : c.code}
+                            className={`w-7 h-7 rounded text-[10.5px] font-bold flex items-center justify-center mx-auto ${codeStyle(c, data.holidays[d.date])} ${clickable ? 'hover:ring-2 hover:ring-[#1d4ed8] cursor-pointer' : 'cursor-default'}`}>
+                            {c.leave ? (c.relief ? 'R' : '!') : (c.code === 'Off' ? '·' : c.code === 'Rest' ? '–' : c.code)}
+                          </button>
+                        </td>
+                      );
+                    })}
+                  </tr>
                 ))}
-              </div>
-            </Card>
-          ))}
-          <div className="flex flex-wrap items-center gap-3 pb-4">
-            <Btn tone="ghost" onClick={addStaff}>+ Tambah staff</Btn>
-            <Btn size="lg" onClick={save} disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan manpower'}</Btn>
-            {msg && <span className="text-sm font-semibold text-emerald-600">{msg}</span>}
+                {plant !== 'ALL' && (
+                  <tr className="bg-slate-50/70">
+                    <td className="sticky left-0 z-10 bg-slate-50 px-4 py-2 font-bold text-[11px] uppercase tracking-wide text-slate-500">Headcount</td>
+                    {data.days.map(d => {
+                      const n = (data.headcount[d.date] || {})[plant] || 0;
+                      return <td key={d.date} className="text-center py-2">
+                        <span className={`text-[11.5px] font-extrabold ${n === 0 ? 'text-rose-600' : 'text-slate-700'}`}>{n}</span>
+                      </td>;
+                    })}
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
-        </div>
+          {canEdit && <div className="px-4 py-3 border-t border-slate-100 text-[11.5px] text-slate-400">Klik hari bertugas untuk rekod cuti + pengganti. Pengganti yang dah diambil pada hari yang sama tak boleh dipilih lagi.</div>}
+        </Card>
       )}
+
+      {sel && <ReliefModal sel={sel} lists={lists} user={user} onClose={() => setSel(null)} onSaved={() => { setSel(null); load(); }} />}
     </div>
   );
 }
 
+function ReliefModal({ sel, lists, user, onClose, onSaved }) {
+  const { staff, date, cell } = sel;
+  const [cands, setCands] = useState(null);
+  const [leaveType, setLeaveType] = useState(cell.leave || (lists.leaveTypes[0] || 'AL'));
+  const [relief, setRelief] = useState(cell.relief || '');
+  const [remarks, setRemarks] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const res = await api('getReliefCandidates', { date, plant: staff.plant, originalStaff: staff.name });
+      if (res.ok) setCands(res.candidates);
+    })();
+  }, [date, staff.name]);
+
+  const save = async () => {
+    setSaving(true);
+    const res = await api('saveRelief', { date, plant: staff.plant, originalStaff: staff.name, leaveType, reliefStaff: relief, remarks });
+    setSaving(false);
+    if (res.ok) onSaved(); else alert(res.error || 'Gagal simpan.');
+  };
+  const remove = async () => {
+    if (!cell.reliefId) return;
+    setSaving(true);
+    const res = await api('deleteRelief', { id: cell.reliefId });
+    setSaving(false);
+    if (res.ok) onSaved(); else alert(res.error || 'Gagal padam.');
+  };
+
+  const avail = cands ? cands.filter(c => c.available) : [];
+  const busy = cands ? cands.filter(c => !c.available) : [];
+
+  return (
+    <Modal title="Rekod cuti & relief" subtitle={`${staff.name} · ${staff.plant} · ${fmtDate(date)} · syif ${cell.code}`} onClose={onClose} wide>
+      <Field label="Jenis cuti">
+        <select className={inputCls} value={leaveType} onChange={(e) => setLeaveType(e.target.value)}>
+          {lists.leaveTypes.map(t => <option key={t}>{t}</option>)}
+        </select>
+      </Field>
+      <Field label="Pengganti (relief)" hint="Hanya staf yang Off / Rest hari tu dan belum jadi relief orang lain">
+        {!cands ? <Spinner small /> : (
+          <select className={inputCls} value={relief} onChange={(e) => setRelief(e.target.value)}>
+            <option value="">— Belum ada pengganti —</option>
+            {avail.map(c => <option key={c.name} value={c.name}>{c.name} · {c.plant}{c.samePlant ? ' (plant sama)' : ''} · {c.code}</option>)}
+          </select>
+        )}
+      </Field>
+      {busy.length > 0 && (
+        <div className="bg-slate-50 rounded-xl px-3 py-2 mb-3 text-[11.5px] text-slate-500">
+          Tidak boleh dipilih: {busy.slice(0, 6).map(c => `${c.name} (${c.reason})`).join(', ')}{busy.length > 6 ? '…' : ''}
+        </div>
+      )}
+      <Field label="Nota"><input className={inputCls} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="cth: cuti kecemasan keluarga" /></Field>
+      {!relief && <p className="text-[12px] text-rose-600 bg-rose-50 rounded-xl px-3 py-2 mb-3">Tanpa pengganti, headcount hari tu akan berkurang dan ditanda merah pada dashboard.</p>}
+      <div className="flex gap-2">
+        <Btn size="lg" className="flex-1" onClick={save} disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan'}</Btn>
+        {cell.reliefId && <Btn size="lg" tone="ghost" onClick={remove} disabled={saving}>Padam</Btn>}
+      </div>
+    </Modal>
+  );
+}
+
 // ============================================================
-// TETAPAN (Manager full config)
+// TETAPAN (Manager = superadmin)
 // ============================================================
 const LIST_COLUMNS = [
   { key: 'Plants', label: 'Plant', field: 'plants' },
-  { key: 'HQMembers', label: 'HQ team', field: 'hqMembers' },
   { key: 'EquipmentNames', label: 'Equipment', field: 'equipmentNames' },
   { key: 'Priority', label: 'Priority', field: 'priorities' },
   { key: 'AttentionStatus', label: 'Status permohonan', field: 'attentionStatuses' },
   { key: 'EquipmentStatus', label: 'Status equipment', field: 'equipmentStatuses' },
+  { key: 'LeaveTypes', label: 'Jenis cuti', field: 'leaveTypes' },
 ];
+
 function SettingsView({ lists, refreshLists }) {
+  const [tab, setTab] = useState('users');
   const [users, setUsers] = useState([]);
+  const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editUser, setEditUser] = useState(null);
+  const [editStaff, setEditStaff] = useState(null);
   const [activeList, setActiveList] = useState(LIST_COLUMNS[0]);
   const [newValue, setNewValue] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await api('listUsers');
-    if (res.ok) setUsers(res.rows);
+    const [u, s] = await Promise.all([api('listUsers'), api('listStaff')]);
+    if (u.ok) setUsers(u.rows);
+    if (s.ok) setStaff(s.rows);
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -1497,55 +1686,126 @@ function SettingsView({ lists, refreshLists }) {
     refreshLists();
   };
 
-  const roleTone = { Manager: 'bg-blue-50 text-blue-700', Supervisor: 'bg-emerald-50 text-emerald-700', HQ: 'bg-violet-50 text-violet-700', Admin: 'bg-slate-200 text-slate-700' };
+  const roleTone = { Manager: 'bg-blue-50 text-blue-700', Supervisor: 'bg-emerald-50 text-emerald-700', HQ: 'bg-violet-50 text-violet-700' };
+  const groupTone = { A: 'bg-blue-50 text-blue-700', B: 'bg-amber-50 text-amber-700', C: 'bg-violet-50 text-violet-700' };
 
   return (
-    <div className="max-w-5xl mx-auto grid lg:grid-cols-2 gap-4 items-start">
+    <div className="max-w-5xl mx-auto space-y-4">
       <Card>
-        <SectionTitle action={<Btn size="sm" onClick={() => setEditUser({})}>+ User</Btn>}>Pengguna sistem</SectionTitle>
-        {loading ? <Spinner small /> : (
-          <div className="divide-y divide-slate-100">
-            {users.map(u => (
-              <div key={u.ID} className="py-3 flex items-center gap-3 cursor-pointer hover:bg-slate-50/70 -mx-2 px-2 rounded-xl" onClick={() => setEditUser(u)}>
-                <div className="w-9 h-9 rounded-full bg-[#1d4ed8] text-white text-[12px] font-extrabold flex items-center justify-center shrink-0">{initials(u.Name)}</div>
-                <div className="min-w-0 flex-1">
-                  <div className="font-bold text-[13.5px] text-slate-800 truncate">{u.Name}</div>
-                  <div className="text-[11.5px] text-slate-400">{u.Plant}</div>
-                </div>
-                <Pill className={roleTone[u.Role] || 'bg-slate-100 text-slate-600'}>{u.Role}</Pill>
-                {String(u.Active).toUpperCase() === 'N' && <Pill className="bg-rose-50 text-rose-600">Tidak aktif</Pill>}
-              </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-extrabold text-slate-800">Tetapan sistem</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Akaun pengguna, senarai staf jadual, dan senarai pilihan</p>
+          </div>
+          <div className="flex gap-2">
+            {[['users', 'Akaun'], ['staff', 'Staf jadual'], ['lists', 'Senarai']].map(([k, l]) => (
+              <button key={k} onClick={() => setTab(k)}
+                className={'px-3.5 py-1.5 rounded-full text-[12.5px] font-bold ' + (tab === k ? 'bg-[#0b2a66] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}>{l}</button>
             ))}
           </div>
-        )}
-        <p className="text-[11.5px] text-slate-400 mt-4 bg-slate-50 rounded-xl px-3 py-2">
-          Nama user role <b>HQ</b> kena sama dengan nama dalam senarai HQ team, supaya tugasan yang di-assign masuk ke akaun dia.
-        </p>
+        </div>
       </Card>
 
-      <Card>
-        <SectionTitle>Senarai boleh edit</SectionTitle>
-        <div className="flex flex-wrap gap-2 mb-4">
-          {LIST_COLUMNS.map(c => (
-            <button key={c.key} onClick={() => setActiveList(c)}
-              className={`px-3 py-1.5 rounded-full text-[12px] font-bold ${activeList.key === c.key ? 'bg-[#0b2a66] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{c.label}</button>
-          ))}
-        </div>
-        <div className="flex flex-wrap gap-2 mb-4">
-          {(lists[activeList.field] || []).map(v => (
-            <Pill key={v} className="bg-slate-100 text-slate-700">{v}</Pill>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          <input className={inputCls} placeholder={`Tambah ${activeList.label.toLowerCase()} baru`} value={newValue}
-            onChange={(e) => setNewValue(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addValue()} />
-          <Btn onClick={addValue}>Tambah</Btn>
-        </div>
-        <p className="text-[11.5px] text-slate-400 mt-3">Senarai ni disimpan dalam tab <b>Lists</b> kat Google Sheet — boleh edit terus di sana juga.</p>
-      </Card>
+      {tab === 'users' && (
+        <Card>
+          <SectionTitle action={<Btn size="sm" onClick={() => setEditUser({})}>+ Akaun</Btn>}>Akaun pengguna</SectionTitle>
+          {loading ? <Spinner small /> : (
+            <div className="divide-y divide-slate-100">
+              {users.map(u => (
+                <div key={u.ID} className="py-3 flex items-center gap-3 cursor-pointer hover:bg-slate-50/70 -mx-2 px-2 rounded-xl" onClick={() => setEditUser(u)}>
+                  <div className="w-9 h-9 rounded-full bg-[#1d4ed8] text-white text-[12px] font-extrabold flex items-center justify-center shrink-0">{initials(u.Name)}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold text-[13.5px] text-slate-800 truncate">{u.Name}</div>
+                    <div className="text-[11.5px] text-slate-400">{u.Plant}</div>
+                  </div>
+                  <Pill className={roleTone[u.Role] || 'bg-slate-100 text-slate-600'}>{u.Role}</Pill>
+                  {String(u.Active).toUpperCase() === 'N' && <Pill className="bg-rose-50 text-rose-600">Tidak aktif</Pill>}
+                </div>
+              ))}
+            </div>
+          )}
+          <p className="text-[11.5px] text-slate-400 mt-4 bg-slate-50 rounded-xl px-3 py-2">
+            Satu akaun satu peranan — akaun Manager tak boleh jadi HQ. Dropdown "HQ support" dan "logistik HQ" ambil terus daripada akaun berperanan <b>HQ</b> di sini.
+          </p>
+        </Card>
+      )}
 
-      {editUser && <UserModal user={editUser} lists={lists} onClose={() => setEditUser(null)} onSaved={() => { setEditUser(null); load(); }} />}
+      {tab === 'staff' && (
+        <Card>
+          <SectionTitle action={<Btn size="sm" onClick={() => setEditStaff({})}>+ Staf</Btn>}>Staf jadual (group A / B / C)</SectionTitle>
+          {loading ? <Spinner small /> : (
+            <div className="divide-y divide-slate-100">
+              {staff.map(s => (
+                <div key={s.ID} className="py-3 flex items-center gap-3 cursor-pointer hover:bg-slate-50/70 -mx-2 px-2 rounded-xl" onClick={() => setEditStaff(s)}>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold text-[13.5px] text-slate-800 truncate">{s.Name}</div>
+                    <div className="text-[11.5px] text-slate-400">{s.Plant}</div>
+                  </div>
+                  <Pill className={groupTone[s.Group] || 'bg-slate-100 text-slate-600'}>Grup {s.Group}</Pill>
+                  {String(s.Active).toUpperCase() === 'N' && <Pill className="bg-rose-50 text-rose-600">Tidak aktif</Pill>}
+                </div>
+              ))}
+            </div>
+          )}
+          <p className="text-[11.5px] text-slate-400 mt-4 bg-slate-50 rounded-xl px-3 py-2">
+            Group menentukan jadual: cycle 12 hari (2,2,2,2,Off,Rest,1,1,1,1,Off,Rest). Nama di sini juga jadi pilihan dropdown pengganti relief.
+          </p>
+        </Card>
+      )}
+
+      {tab === 'lists' && (
+        <Card>
+          <SectionTitle>Senarai boleh edit</SectionTitle>
+          <div className="flex flex-wrap gap-2 mb-4">
+            {LIST_COLUMNS.map(c => (
+              <button key={c.key} onClick={() => setActiveList(c)}
+                className={'px-3 py-1.5 rounded-full text-[12px] font-bold ' + (activeList.key === c.key ? 'bg-[#0b2a66] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}>{c.label}</button>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2 mb-4">
+            {(lists[activeList.field] || []).map(v => <Pill key={v} className="bg-slate-100 text-slate-700">{v}</Pill>)}
+          </div>
+          <div className="flex gap-2">
+            <input className={inputCls} placeholder={'Tambah ' + activeList.label.toLowerCase() + ' baru'} value={newValue}
+              onChange={(e) => setNewValue(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addValue()} />
+            <Btn onClick={addValue}>Tambah</Btn>
+          </div>
+          <p className="text-[11.5px] text-slate-400 mt-3">Disimpan dalam tab <b>Lists</b> kat Google Sheet — boleh edit terus di sana juga.</p>
+        </Card>
+      )}
+
+      {editUser && <UserModal user={editUser} lists={lists} onClose={() => setEditUser(null)} onSaved={() => { setEditUser(null); load(); refreshLists(); }} />}
+      {editStaff && <StaffModal staff={editStaff} lists={lists} onClose={() => setEditStaff(null)} onSaved={() => { setEditStaff(null); load(); refreshLists(); }} />}
     </div>
+  );
+}
+
+function StaffModal({ staff, lists, onClose, onSaved }) {
+  const [f, setF] = useState({
+    Name: staff.Name || '', Plant: staff.Plant || (lists.plants[0] || ''), Group: staff.Group || 'A',
+    Active: String(staff.Active || 'Y').toUpperCase() !== 'N',
+  });
+  const [saving, setSaving] = useState(false);
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+  const save = async () => {
+    setSaving(true);
+    const fields = { Name: f.Name, Plant: f.Plant, Group: f.Group, Active: f.Active ? 'Y' : 'N' };
+    const res = await api('upsertStaff', staff.ID ? { id: staff.ID, fields } : { fields });
+    setSaving(false);
+    if (res.ok) onSaved(); else alert(res.error || 'Gagal simpan.');
+  };
+  return (
+    <Modal title={staff.ID ? 'Kemaskini staf' : 'Tambah staf'} onClose={onClose}>
+      <Field label="Nama"><input className={inputCls} value={f.Name} onChange={(e) => set('Name', e.target.value)} /></Field>
+      <Field label="Plant"><select className={inputCls} value={f.Plant} onChange={(e) => set('Plant', e.target.value)}>{lists.plants.map(p => <option key={p}>{p}</option>)}</select></Field>
+      <Field label="Group jadual" hint="A / B / C — menentukan syif harian sepanjang tahun">
+        <select className={inputCls} value={f.Group} onChange={(e) => set('Group', e.target.value)}><option>A</option><option>B</option><option>C</option></select>
+      </Field>
+      <label className="flex items-center gap-2 text-sm mb-4 font-semibold text-slate-600">
+        <input type="checkbox" checked={f.Active} onChange={(e) => set('Active', e.target.checked)} className="w-4 h-4" /> Aktif
+      </label>
+      <Btn size="lg" className="w-full" onClick={save} disabled={saving || !f.Name}>{saving ? 'Menyimpan…' : 'Simpan'}</Btn>
+    </Modal>
   );
 }
 
@@ -1559,26 +1819,29 @@ function UserModal({ user, lists, onClose, onSaved }) {
 
   const save = async () => {
     setSaving(true);
-    const fields = { Name: f.Name, Plant: f.Plant, Role: f.Role, PIN: f.PIN, Active: f.Active ? 'Y' : 'N' };
+    const fields = { Name: f.Name, Plant: f.Role === 'Supervisor' ? f.Plant : 'ALL', Role: f.Role, PIN: f.PIN, Active: f.Active ? 'Y' : 'N' };
     const res = await api('upsertUser', user.ID ? { id: user.ID, fields } : { fields });
     setSaving(false);
     if (res.ok) onSaved(); else alert(res.error || 'Gagal simpan.');
   };
 
   return (
-    <Modal title={user.ID ? 'Kemaskini user' : 'Tambah user'} onClose={onClose}>
-      <Field label="Nama"><input className={inputCls} value={f.Name} onChange={(e) => set('Name', e.target.value)} /></Field>
-      <Field label="Peranan" hint="Manager = akses penuh · Supervisor = plant sendiri · HQ = tugasan sendiri">
+    <Modal title={user.ID ? 'Kemaskini akaun' : 'Tambah akaun'} onClose={onClose}>
+      <Field label="Nama" hint="Untuk akaun HQ, guna nama sebenar — nama ni yang muncul dalam dropdown assign">
+        <input className={inputCls} value={f.Name} onChange={(e) => set('Name', e.target.value)} />
+      </Field>
+      <Field label="Peranan" hint="Manager = superadmin · Supervisor = plant sendiri · HQ = tugasan sendiri">
         <select className={inputCls} value={f.Role} onChange={(e) => set('Role', e.target.value)}>
-          <option>Supervisor</option><option>Manager</option><option>HQ</option><option>Admin</option>
+          <option>Supervisor</option><option>Manager</option><option>HQ</option>
         </select>
       </Field>
-      <Field label="Plant">
-        <select className={inputCls} value={f.Plant} onChange={(e) => set('Plant', e.target.value)}>
-          <option value="ALL">ALL (Manager / HQ)</option>
-          {lists.plants.map(p => <option key={p} value={p}>{p}</option>)}
-        </select>
-      </Field>
+      {f.Role === 'Supervisor' && (
+        <Field label="Plant">
+          <select className={inputCls} value={f.Plant === 'ALL' ? (lists.plants[0] || '') : f.Plant} onChange={(e) => set('Plant', e.target.value)}>
+            {lists.plants.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </Field>
+      )}
       <Field label="PIN"><input className={inputCls} value={f.PIN} onChange={(e) => set('PIN', e.target.value)} inputMode="numeric" /></Field>
       <label className="flex items-center gap-2 text-sm mb-4 font-semibold text-slate-600">
         <input type="checkbox" checked={f.Active} onChange={(e) => set('Active', e.target.checked)} className="w-4 h-4" /> Akaun aktif
@@ -1619,9 +1882,9 @@ function GuideView() {
               {data.guide.map((g, i) => (
                 <tr key={i} className="border-b border-slate-50 align-top">
                   <td className="py-3 pr-3 font-bold text-slate-800">{g.Tab}</td>
-                  <td className="py-3 pr-3 text-slate-600">{g.SupervisorUpdates}</td>
-                  <td className="py-3 pr-3 text-slate-600">{g.ManagerHQUpdates}</td>
-                  <td className="py-3 text-slate-500">{g.When}</td>
+                  <td className="py-3 pr-3 text-slate-600">{g.PlantIsi}</td>
+                  <td className="py-3 pr-3 text-slate-600">{g.ManagerHQIsi}</td>
+                  <td className="py-3 text-slate-500">{g.Bila}</td>
                 </tr>
               ))}
             </tbody>
@@ -1652,6 +1915,7 @@ function GuideView() {
             { t: 'Manager assign HQ support', d: 'Pilih HQ team, tarikh assign & ETA — tugasan HQ terbina automatik' },
             { t: 'HQ team update progress', d: 'HQ isi update terkini & tarikh siap' },
             { t: 'Plant & manager nampak status', d: 'Update HQ terus dipaparkan pada permohonan asal' },
+            { t: 'Jadual & relief', d: 'Jadual setahun auto (grup A/B/C) — supervisor rekod pengganti bila ada cuti' },
           ].map((s, i, arr) => (
             <div key={i} className="flex gap-3">
               <div className="flex flex-col items-center">
@@ -1674,10 +1938,9 @@ function GuideView() {
 // APP SHELL
 // ============================================================
 function tabsForRole(role) {
-  if (role === 'Manager' || role === 'Admin')
-    return ['Utama', 'Attention', 'Tugasan HQ', 'Equipment', 'Manpower', 'Update Mingguan', 'Tetapan', 'Panduan'];
+  if (role === 'Manager') return ['Utama', 'Permohonan', 'Tugasan HQ', 'Equipment', 'Jadual', 'Update Mingguan', 'Tetapan', 'Panduan'];
   if (role === 'HQ') return ['Utama', 'Tugasan HQ', 'Equipment', 'Panduan'];
-  return ['Utama', 'Update Mingguan', 'Permohonan', 'Equipment', 'Manpower', 'Panduan'];
+  return ['Utama', 'Update Mingguan', 'Permohonan', 'Equipment', 'Jadual', 'Panduan'];
 }
 
 function App() {
@@ -1729,7 +1992,7 @@ function App() {
       case 'Permohonan': return <AttentionView user={user} lists={lists} goTo={setTab} />;
       case 'Tugasan HQ': return <HqTasksView user={user} lists={lists} />;
       case 'Equipment': return <EquipmentView user={user} lists={lists} />;
-      case 'Manpower': return <ManpowerView user={user} lists={lists} weekStart={weekStart} setWeekStart={setWeekStart} />;
+      case 'Jadual': return <ScheduleView user={user} lists={lists} />;
       case 'Tetapan': return <SettingsView lists={lists} refreshLists={loadLists} />;
       case 'Panduan': return <GuideView />;
       default: return null;
