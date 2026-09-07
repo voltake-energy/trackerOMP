@@ -49,7 +49,7 @@ const { useState, useEffect, useCallback, useMemo } = React;
 // ============================================================
 // !!! WAJIB TUKAR: paste Google Apps Script Web App URL kau di sini
 // ============================================================
-const API_BASE_URL = "https://script.google.com/macros/s/AKfycbwbtOulH2UPGLPRIkvGKHkXmJWdb0aNtmstu2v0Fsz3O6qhwz3SfrfZOEV3ZeL7sBiY/exec";
+const API_BASE_URL = "https://script.google.com/macros/s/AKfycbx2Va96vD6NIm48pqqj4vmJ8nIm90BjKHzeOBZmjgzaJs3_JtVX4kNusr7G1ep2j04v/exec";
 
 const DAY_KEYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const DAY_LABELS = { Mon: 'Isnin', Tue: 'Selasa', Wed: 'Rabu', Thu: 'Khamis', Fri: 'Jumaat', Sat: 'Sabtu', Sun: 'Ahad' };
@@ -547,6 +547,8 @@ function PlantDashboard({ user, lists, weekStart, setWeekStart, goTo }) {
           </div>
         </div>
 
+        <ScheduleCard user={user} goTo={goTo} mode="plant" />
+
         <Card>
           <SectionTitle action={<Btn size="sm" tone="ghost" onClick={() => goTo('Permohonan')}>Lihat semua</Btn>}>Status permohonan saya</SectionTitle>
           {open.length === 0 ? <Empty text="Tiada permohonan terbuka." /> : (
@@ -628,6 +630,8 @@ function HqDashboard({ user, lists, goTo }) {
             {open.length === 0 && <div className="text-blue-200/80 text-sm py-4 text-center">Tiada tugasan aktif.</div>}
           </div>
         </div>
+
+        <ScheduleCard user={user} goTo={goTo} mode="group" lists={lists} />
 
         <Card>
           <SectionTitle>Semua tugasan</SectionTitle>
@@ -1450,6 +1454,217 @@ function EquipRequestManageModal({ row, lists, onClose, onSaved }) {
 // ============================================================
 // JADUAL & RELIEF
 // ============================================================
+// ------------------------------------------------------------
+// Paparan kalendar bulanan (gaya jadual Excel asal)
+// ------------------------------------------------------------
+const DOW_HEAD = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+const MONTH_MS = ['Januari', 'Februari', 'Mac', 'April', 'Mei', 'Jun', 'Julai', 'Ogos', 'September', 'Oktober', 'November', 'Disember'];
+
+function shortName(n) {
+  const s = String(n || '').trim();
+  return s.length > 9 ? s.slice(0, 8) + '.' : s;
+}
+function cellStyle(cell) {
+  if (!cell) return 'bg-white text-slate-300';
+  if (cell.leave && !cell.relief) return 'bg-rose-100 text-rose-700 ring-2 ring-inset ring-rose-500';
+  if (cell.leave && cell.relief) return 'bg-[#fce7f3] text-[#be185d] ring-2 ring-inset ring-[#db2777]';
+  if (cell.coverFor) return (cell.working ? 'bg-rose-200 text-rose-900' : 'bg-[#e0e7ff] text-[#3730a3]') + ' ring-1 ring-inset ring-indigo-400';
+  if (cell.code === '1') return 'bg-[#c6efce] text-[#14532d] font-bold';
+  if (cell.code === '2') return 'bg-[#ffeb9c] text-[#78350f] font-bold';
+  if (cell.code === 'Off') return 'bg-white text-slate-500';
+  if (cell.code === 'Rest') return 'bg-slate-100 text-slate-500';
+  return 'bg-white text-slate-400';
+}
+/** Baris atas = syif, baris bawah = nama pengganti / jenis cuti. */
+function cellLines(cell) {
+  if (!cell) return { top: '', bottom: '' };
+  if (cell.leave && cell.relief) return { top: cell.code, bottom: shortName(cell.relief), strike: false };
+  if (cell.leave) return { top: cell.code, bottom: cell.leave, strike: true };
+  if (cell.coverFor) return { top: (cell.working ? cell.code : cell.coverCode) + '\u1d3f', bottom: 'ganti ' + shortName(cell.coverFor) };
+  return { top: cell.code, bottom: '' };
+}
+function cellTitle(cell) {
+  if (!cell) return '';
+  if (cell.leave) return cell.leave + (cell.relief ? ' — diganti oleh ' + cell.relief : ' — TIADA pengganti');
+  if (cell.coverFor) return 'Relief untuk ' + cell.coverFor + (cell.coverPlant ? ' (' + cell.coverPlant + ')' : '') + ' — syif ' + cell.coverCode + (cell.working ? ' (AMARAN: dia pun ada syif ' + cell.code + ' hari ni)' : '');
+  return cell.code;
+}
+
+/** rows: [{ label, sub, cells:{iso:cell} }] — susun ikut minggu Ahad–Sabtu macam jadual asal. */
+function MonthCalendar({ month, days, holidays, rows, onCellClick, canEdit, compact }) {
+  const weeks = [];
+  let cur = null;
+  days.forEach((d) => {
+    if (!cur || d.dow === 0) { cur = new Array(7).fill(null); weeks.push(cur); }
+    cur[d.dow] = d;
+  });
+
+  return (
+    <div className="space-y-2.5">
+      {weeks.map((week, wi) => (
+        <div key={wi} className="overflow-x-auto no-bar">
+          <table className="w-full border-collapse text-center" style={{ minWidth: compact ? 340 : 520 }}>
+            <thead>
+              {wi === 0 && (
+                <tr>
+                  <th className="bg-white border-0"></th>
+                  {DOW_HEAD.map((d, i) => (
+                    <th key={i} className="border border-slate-300 bg-[#dbe5f1] px-1 py-0.5 text-[10px] font-extrabold text-slate-600">{d}</th>
+                  ))}
+                </tr>
+              )}
+              <tr>
+                <th className={`bg-[#fff2cc] border border-slate-300 text-left px-2 py-1 text-[10.5px] font-extrabold text-slate-700 ${compact ? 'w-[86px]' : 'w-[130px]'}`}>Staff</th>
+                {week.map((d, i) => (
+                  <th key={i} className={`border border-slate-300 px-1 py-1 text-[10px] font-bold ${!d ? 'bg-slate-50 text-slate-300' : holidays[d.date] ? 'bg-rose-500 text-white' : 'bg-[#fff2cc] text-slate-700'}`}>
+                    {d ? `${d.day}-${MONTH_MS[Number(month.split('-')[1]) - 1].slice(0, 3)}` : ''}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.label}>
+                  <td className="bg-[#fff2cc] border border-slate-300 text-left px-2 py-1">
+                    <div className="text-[11px] font-extrabold text-slate-800 leading-tight">{r.label}</div>
+                    {r.sub && !compact && <div className="text-[9.5px] text-slate-500 leading-tight">{r.sub}</div>}
+                  </td>
+                  {week.map((d, i) => {
+                    const cell = d ? r.cells[d.date] : null;
+                    const clickable = canEdit && cell && cell.working && onCellClick;
+                    return (
+                      <td key={i} className="border border-slate-300 p-0">
+                        {(() => {
+                          const L = cellLines(cell);
+                          return (
+                            <button disabled={!clickable}
+                              onClick={() => clickable && onCellClick(r, d.date, cell)}
+                              title={cellTitle(cell)}
+                              className={`w-full ${compact ? 'h-9' : 'h-10'} leading-tight flex flex-col items-center justify-center ${cellStyle(cell)} ${clickable ? 'hover:ring-2 hover:ring-inset hover:ring-[#1d4ed8] cursor-pointer' : 'cursor-default'}`}>
+                              <span className={`text-[11px] font-bold ${L.strike ? 'line-through' : ''}`}>{L.top}</span>
+                              {L.bottom && <span className="text-[8.5px] font-extrabold tracking-tight">{L.bottom}</span>}
+                            </button>
+                          );
+                        })()}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StaffMatrix({ lists, compact }) {
+  const plants = lists.plants || [];
+  const byKey = {};
+  (lists.staff || []).forEach(s => { byKey[s.group + '|' + s.plant] = s.name; });
+  return (
+    <div className="overflow-x-auto no-bar">
+      <table className="border-collapse text-center" style={{ minWidth: 420 }}>
+        <thead>
+          <tr>
+            <th className="bg-[#fff2cc] border border-slate-300 px-2 py-1 text-[10.5px] font-extrabold text-slate-700">STAFF</th>
+            {plants.map(p => (
+              <th key={p} className="border border-slate-300 bg-white px-3 py-1 text-[11px] font-extrabold text-slate-800 uppercase">{p}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {['A', 'B', 'C'].map(g => (
+            <tr key={g}>
+              <td className="bg-[#fff2cc] border border-slate-300 px-2 py-1 text-[11px] font-extrabold text-slate-800">{g}</td>
+              {plants.map(p => (
+                <td key={p} className="border border-slate-300 px-3 py-1 text-[11.5px] text-slate-700">{byKey[g + '|' + p] || <span className="text-slate-300">—</span>}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!compact && <p className="text-[11px] text-slate-400 mt-2">Setiap plant ada satu staf per grup. Jadual syif ikut grup — jadi baris A / B / C di bawah terpakai untuk semua plant.</p>}
+    </div>
+  );
+}
+
+function ScheduleLegend({ compact }) {
+  return (
+    <div className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 ${compact ? 'text-[10.5px]' : 'text-[11.5px]'}`}>
+      <span className="flex items-center gap-1.5"><span className="w-5 h-4 rounded-sm bg-[#c6efce] border border-slate-300"></span> 1 · 7 pagi–5 petang</span>
+      <span className="flex items-center gap-1.5"><span className="w-5 h-4 rounded-sm bg-[#ffeb9c] border border-slate-300"></span> 2 · 9 pagi–7 malam</span>
+      <span className="flex items-center gap-1.5"><span className="w-5 h-4 rounded-sm bg-white border border-slate-300"></span> Off / Rest</span>
+      <span className="flex items-center gap-1.5"><span className="w-5 h-4 rounded-sm bg-[#fce7f3] border-2 border-[#db2777]"></span> cuti · nama pengganti tertera</span>
+      <span className="flex items-center gap-1.5"><span className="w-5 h-4 rounded-sm bg-[#e0e7ff] border border-indigo-400"></span> ᴿ · masuk ganti</span>
+      <span className="flex items-center gap-1.5"><span className="w-5 h-4 rounded-sm bg-rose-100 border-2 border-rose-500"></span> cuti tiada ganti</span>
+    </div>
+  );
+}
+
+/** Kad jadual untuk dashboard (supervisor = plant sendiri, HQ = grup A/B/C semua plant). */
+function ScheduleCard({ user, goTo, mode, lists }) {
+  const [month, setMonth] = useState(toISO(new Date()).slice(0, 7));
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const res = await api('getSchedule', { month, plant: mode === 'plant' ? user.plant : 'ALL' });
+    if (res.ok) setData(res);
+    setLoading(false);
+  }, [month, mode, user.plant]);
+  useEffect(() => { load(); }, [load]);
+
+  const shiftMonth = (n) => {
+    const [y, m] = month.split('-').map(Number);
+    setMonth(toISO(new Date(y, m - 1 + n, 1)).slice(0, 7));
+  };
+
+  const rows = useMemo(() => {
+    if (!data) return [];
+    return ['A', 'B', 'C'].map(g => {
+      const inGroup = data.staff.filter(s => s.group === g);
+      const mine = mode === 'plant' ? inGroup.find(s => s.plant === user.plant) : inGroup[0];
+      return {
+        label: mode === 'plant' ? g + ' · ' + (mine ? mine.name : '—') : 'Grup ' + g,
+        sub: mode === 'plant' ? '' : inGroup.map(s => s.name).join(', '),
+        cells: mine ? mine.cells : {},
+        staff: mine,
+      };
+    });
+  }, [data, mode, user.plant]);
+
+  const [y, m] = month.split('-').map(Number);
+
+  return (
+    <Card>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div>
+          <h3 className="font-extrabold text-[15px] text-slate-800">{mode === 'plant' ? `Jadual ${user.plant}` : 'Jadual syif team'}</h3>
+          <p className="text-[11.5px] text-slate-400">{mode === 'plant' ? 'Klik hari bertugas untuk rekod relief' : 'Grup A / B / C — semua plant ikut jadual sama'}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => shiftMonth(-1)} className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 font-bold text-slate-600 text-sm">‹</button>
+          <span className="text-[12.5px] font-bold text-slate-700 w-[112px] text-center">{MONTH_MS[m - 1]} {y}</span>
+          <button onClick={() => shiftMonth(1)} className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 font-bold text-slate-600 text-sm">›</button>
+          {goTo && <Btn size="sm" tone="ghost" onClick={() => goTo('Jadual')}>Buka penuh</Btn>}
+        </div>
+      </div>
+      {loading || !data ? <Spinner small /> : (
+        <React.Fragment>
+          {mode === 'group' && lists && <div className="mb-3"><StaffMatrix lists={lists} compact /></div>}
+          <MonthCalendar month={month} days={data.days} holidays={data.holidays} rows={rows} compact
+            canEdit={mode === 'plant' && user.role === 'Supervisor'} onCellClick={() => goTo && goTo('Jadual')} />
+          <div className="mt-3"><ScheduleLegend compact /></div>
+        </React.Fragment>
+      )}
+    </Card>
+  );
+}
+
+
 const DOW_LETTER = ['A', 'I', 'S', 'R', 'K', 'J', 'S']; // Ahad, Isnin, Selasa, Rabu, Khamis, Jumaat, Sabtu
 
 function codeStyle(cell, isHoliday) {
@@ -1470,6 +1685,7 @@ function ScheduleView({ user, lists }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sel, setSel] = useState(null);
+  const [view, setView] = useState('kalendar');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1492,6 +1708,21 @@ function ScheduleView({ user, lists }) {
   const reliefCount = data ? data.staff.reduce((a, s) => a + Object.values(s.cells).filter(c => c.leave).length, 0) : 0;
   const gapCount = data ? data.staff.reduce((a, s) => a + Object.values(s.cells).filter(c => c.leave && !c.relief).length, 0) : 0;
 
+  // Baris kalendar = grup A / B / C (macam jadual asal). Bila satu plant dipilih, tunjuk nama staf plant tu.
+  const calRows = useMemo(() => {
+    if (!data) return [];
+    return ['A', 'B', 'C'].map(g => {
+      const inGroup = data.staff.filter(s => s.group === g);
+      const mine = plant === 'ALL' ? inGroup[0] : inGroup.find(s => s.plant === plant);
+      return {
+        label: plant === 'ALL' ? g : g + ' · ' + (mine ? mine.name : '—'),
+        sub: plant === 'ALL' ? inGroup.map(s => s.name).join(', ') : (mine ? mine.plant : ''),
+        cells: mine ? mine.cells : {},
+        staff: mine,
+      };
+    });
+  }, [data, plant]);
+
   return (
     <div className="max-w-[1280px] mx-auto space-y-4">
       <Card>
@@ -1507,6 +1738,12 @@ function ScheduleView({ user, lists }) {
                 {lists.plants.map(p => <option key={p}>{p}</option>)}
               </select>
             )}
+            <div className="flex bg-slate-100 rounded-full p-1 gap-0.5">
+              {[['kalendar', 'Kalendar'], ['relief', 'Senarai relief'], ['senarai', 'Matrix']].map(([k, l]) => (
+                <button key={k} onClick={() => setView(k)}
+                  className={'px-3 py-1 rounded-full text-[12px] font-bold ' + (view === k ? 'bg-[#0b2a66] text-white' : 'text-slate-600')}>{l}</button>
+              ))}
+            </div>
             <div className="flex items-center gap-2">
               <button onClick={() => shiftMonth(-1)} className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 font-bold text-slate-600">‹</button>
               <span className="text-sm font-bold text-slate-700 w-32 text-center capitalize">{monthLabel()}</span>
@@ -1514,17 +1751,39 @@ function ScheduleView({ user, lists }) {
             </div>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-3 mt-4 text-[11.5px]">
-          <span className="flex items-center gap-1.5"><span className="w-5 h-5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold flex items-center justify-center">1</span> 7 pagi – 5 petang</span>
-          <span className="flex items-center gap-1.5"><span className="w-5 h-5 rounded bg-amber-100 text-amber-800 text-[10px] font-bold flex items-center justify-center">2</span> 9 pagi – 7 malam</span>
-          <span className="flex items-center gap-1.5"><span className="w-5 h-5 rounded bg-slate-100"></span> Off / Rest</span>
-          <span className="flex items-center gap-1.5"><span className="w-5 h-5 rounded bg-violet-100 ring-1 ring-violet-300"></span> Ada relief</span>
-          <span className="flex items-center gap-1.5"><span className="w-5 h-5 rounded bg-rose-500"></span> Cuti tanpa pengganti</span>
-          <span className="ml-auto text-slate-500">{reliefCount} relief bulan ni{gapCount > 0 ? ` · ${gapCount} belum ada pengganti` : ''}</span>
+        <div className="flex flex-wrap items-center gap-3 mt-4">
+          <ScheduleLegend />
+          <span className="ml-auto text-[11.5px] text-slate-500">{reliefCount} relief bulan ni{gapCount > 0 ? ` · ${gapCount} belum ada pengganti` : ''}</span>
         </div>
       </Card>
 
-      {loading || !data ? <Spinner /> : (
+      {loading || !data ? <Spinner /> : view === 'kalendar' ? (
+        <Card>
+          <div className="mb-4"><StaffMatrix lists={lists} /></div>
+          {plant === 'ALL' && canEdit && (
+            <p className="text-[12px] text-amber-800 bg-amber-50 rounded-xl px-3 py-2 mb-3">
+              Pilih satu plant di atas untuk rekod relief — jadual grup ni sama untuk semua plant.
+            </p>
+          )}
+          <MonthCalendar month={month} days={data.days} holidays={data.holidays}
+            rows={calRows}
+            canEdit={canEdit && plant !== 'ALL'}
+            onCellClick={(row, date, cell) => row.staff && setSel({ staff: row.staff, date, cell })} />
+          {plant !== 'ALL' && (
+            <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap gap-2 items-center">
+              <span className="text-[10.5px] font-bold uppercase tracking-wide text-slate-400">Headcount harian</span>
+              {data.days.map(d => (
+                <span key={d.date} className="text-[11px] text-slate-500">
+                  {d.day}:<b className={((data.headcount[d.date] || {})[plant] || 0) === 0 ? 'text-rose-600' : 'text-slate-700'}>{(data.headcount[d.date] || {})[plant] || 0}</b>
+                </span>
+              ))}
+            </div>
+          )}
+          {canEdit && <div className="mt-3 text-[11.5px] text-slate-400">Klik hari bertugas untuk rekod cuti + pengganti. Pengganti yang dah diambil pada hari yang sama tak boleh dipilih lagi.</div>}
+        </Card>
+      ) : view === 'relief' ? (
+        <ReliefListCard data={data} canEdit={canEdit} onReload={load} />
+      ) : (
         <Card pad="p-0">
           <div className="overflow-x-auto">
             <table className="text-[12px] border-separate border-spacing-0">
@@ -1585,9 +1844,89 @@ function ScheduleView({ user, lists }) {
   );
 }
 
+function ReliefListCard({ data, canEdit, onReload }) {
+  const list = data.reliefList || [];
+  const tally = data.reliefTally || {};
+  const tallyRows = Object.keys(tally).map(k => ({ name: k, n: tally[k] })).sort((a, b) => b.n - a.n);
+  const [busy, setBusy] = useState('');
+
+  const remove = async (id) => {
+    setBusy(id);
+    const res = await api('deleteRelief', { id });
+    setBusy('');
+    if (!res.ok) return alert(res.error);
+    onReload();
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card pad="p-0">
+        <div className="px-5 pt-5 pb-3">
+          <h3 className="font-extrabold text-[15px] text-slate-800">Senarai relief bulan ini</h3>
+          <p className="text-[11.5px] text-slate-400 mt-0.5">{list.length} rekod · {list.filter(r => !r.reliefStaff).length} masih tiada pengganti</p>
+        </div>
+        {list.length === 0 ? <div className="pb-6"><Empty text="Tiada rekod relief bulan ni." /></div> : (
+          <div className="overflow-x-auto no-bar">
+            <table className="w-full text-[12.5px] min-w-[720px]">
+              <thead>
+                <tr className="text-[10.5px] uppercase tracking-wide text-slate-400 border-y border-slate-100 bg-slate-50/60">
+                  <th className="text-left font-bold px-4 py-2">Tarikh</th>
+                  <th className="text-left font-bold px-3 py-2">Plant</th>
+                  <th className="text-left font-bold px-3 py-2">Staf bercuti</th>
+                  <th className="text-left font-bold px-3 py-2">Sebab</th>
+                  <th className="text-left font-bold px-3 py-2">Pengganti</th>
+                  <th className="text-left font-bold px-3 py-2">Nota</th>
+                  {canEdit && <th className="px-3 py-2"></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {list.map(r => (
+                  <tr key={r.id} className="border-b border-slate-50">
+                    <td className="px-4 py-2.5 font-semibold text-slate-700 whitespace-nowrap">{fmtDate(r.date)}</td>
+                    <td className="px-3 py-2.5 text-slate-600">{r.plant}</td>
+                    <td className="px-3 py-2.5 font-bold text-slate-800">{r.originalStaff}</td>
+                    <td className="px-3 py-2.5"><Pill className="bg-slate-100 text-slate-600">{r.leaveType}</Pill></td>
+                    <td className="px-3 py-2.5">
+                      {r.reliefStaff
+                        ? <span className="font-extrabold text-[#be185d]">{r.reliefStaff}</span>
+                        : <span className="font-bold text-rose-600">TIADA PENGGANTI</span>}
+                    </td>
+                    <td className="px-3 py-2.5 text-slate-500">{r.remarks || '—'}</td>
+                    {canEdit && (
+                      <td className="px-3 py-2.5 text-right">
+                        <button onClick={() => remove(r.id)} disabled={busy === r.id}
+                          className="text-[11.5px] font-bold text-rose-500 hover:text-rose-700">{busy === r.id ? '…' : 'Padam'}</button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <SectionTitle>Kekerapan jadi pengganti (bulan ini)</SectionTitle>
+        {tallyRows.length === 0 ? <Empty text="Belum ada." /> : (
+          <div className="flex flex-wrap gap-2">
+            {tallyRows.map(t => (
+              <Pill key={t.name} className={t.n >= 3 ? 'bg-rose-50 text-rose-700' : 'bg-slate-100 text-slate-700'}>
+                {t.name} · {t.n}x
+              </Pill>
+            ))}
+          </div>
+        )}
+        <p className="text-[11.5px] text-slate-400 mt-3">Sistem auto-cadang staf yang paling kurang jadi pengganti supaya beban terbahagi rata.</p>
+      </Card>
+    </div>
+  );
+}
+
 function ReliefModal({ sel, lists, user, onClose, onSaved }) {
   const { staff, date, cell } = sel;
   const [cands, setCands] = useState(null);
+  const [suggested, setSuggested] = useState('');
   const [leaveType, setLeaveType] = useState(cell.leave || (lists.leaveTypes[0] || 'AL'));
   const [relief, setRelief] = useState(cell.relief || '');
   const [remarks, setRemarks] = useState('');
@@ -1596,7 +1935,12 @@ function ReliefModal({ sel, lists, user, onClose, onSaved }) {
   useEffect(() => {
     (async () => {
       const res = await api('getReliefCandidates', { date, plant: staff.plant, originalStaff: staff.name });
-      if (res.ok) setCands(res.candidates);
+      if (res.ok) {
+        setCands(res.candidates);
+        setSuggested(res.suggested || '');
+        // auto-pilih cadangan (paling kurang jadi pengganti bulan ni) kalau belum ada pilihan
+        if (!cell.relief && res.suggested) setRelief(res.suggested);
+      }
     })();
   }, [date, staff.name]);
 
@@ -1628,10 +1972,19 @@ function ReliefModal({ sel, lists, user, onClose, onSaved }) {
         {!cands ? <Spinner small /> : (
           <select className={inputCls} value={relief} onChange={(e) => setRelief(e.target.value)}>
             <option value="">— Belum ada pengganti —</option>
-            {avail.map(c => <option key={c.name} value={c.name}>{c.name} · {c.plant}{c.samePlant ? ' (plant sama)' : ''} · {c.code}</option>)}
+            {avail.map(c => (
+              <option key={c.name} value={c.name}>
+                {c.name} · {c.plant}{c.samePlant ? ' (plant sama)' : ''} · {c.code} · {c.reliefCount || 0}x ganti bulan ni{c.name === suggested ? ' ⟵ dicadang' : ''}
+              </option>
+            ))}
           </select>
         )}
       </Field>
+      {suggested && relief === suggested && (
+        <p className="text-[11.5px] text-emerald-700 bg-emerald-50 rounded-xl px-3 py-2 -mt-1 mb-3">
+          Auto-cadang: <b>{suggested}</b> — paling kurang jadi pengganti bulan ni, jadi beban terbahagi rata.
+        </p>
+      )}
       {busy.length > 0 && (
         <div className="bg-slate-50 rounded-xl px-3 py-2 mb-3 text-[11.5px] text-slate-500">
           Tidak boleh dipilih: {busy.slice(0, 6).map(c => `${c.name} (${c.reason})`).join(', ')}{busy.length > 6 ? '…' : ''}
