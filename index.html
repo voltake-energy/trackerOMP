@@ -1,0 +1,1043 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Weekly Plant Management Tracker</title>
+<meta name="description" content="Cross-plant weekly O&M tracker: supervisor updates, manager attention, HQ tasks, equipment queue and manpower planning." />
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#0f766e" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<link rel="icon" href="icon-192.png" />
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+
+<style>
+  body { -webkit-tap-highlight-color: transparent; }
+  ::-webkit-scrollbar { height: 6px; width: 6px; }
+  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+</style>
+</head>
+<body class="bg-slate-100 text-slate-800">
+
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo, useCallback } = React;
+
+// ============================================================
+// !!! WAJIB TUKAR: paste your Google Apps Script Web App URL here
+// (Deploy > New deployment > Web app > copy the URL ending with /exec)
+// ============================================================
+const API_BASE_URL = "https://script.google.com/macros/s/AKfycby7NX-v4pnu3EWaB0dRaK0DKu0Q84yPBCv6FD7-aOZUp0_pxmzTmYofR-FRh6onxyXk/exec";
+
+// ------------------------------------------------------------
+// API helper
+// ------------------------------------------------------------
+async function api(action, payload = {}) {
+  const token = localStorage.getItem('pt_token') || '';
+  try {
+    const res = await fetch(API_BASE_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action, token, payload }),
+    });
+    const data = await res.json();
+    if (!data.ok && /Sesi tamat/i.test(data.error || '')) {
+      localStorage.removeItem('pt_token');
+      localStorage.removeItem('pt_user');
+      window.location.reload();
+    }
+    return data;
+  } catch (err) {
+    return { ok: false, error: 'Tidak dapat sambung ke server. Semak internet / API URL.' };
+  }
+}
+
+// ------------------------------------------------------------
+// Date helpers
+// ------------------------------------------------------------
+function toISO(d) {
+  const dt = new Date(d);
+  const off = dt.getTimezoneOffset();
+  const local = new Date(dt.getTime() - off * 60000);
+  return local.toISOString().slice(0, 10);
+}
+function mondayOf(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  const day = d.getDay(); // 0=Sun..6=Sat
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return toISO(d);
+}
+function addDays(dateStr, n) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + n);
+  return toISO(d);
+}
+function fmtDate(v) {
+  if (!v) return '-';
+  const d = new Date(v);
+  if (isNaN(d)) return String(v);
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+// ------------------------------------------------------------
+// Small UI atoms
+// ------------------------------------------------------------
+function Badge({ children, color = 'slate' }) {
+  const map = {
+    slate: 'bg-slate-200 text-slate-700',
+    green: 'bg-emerald-100 text-emerald-700',
+    red: 'bg-rose-100 text-rose-700',
+    yellow: 'bg-amber-100 text-amber-700',
+    blue: 'bg-sky-100 text-sky-700',
+    purple: 'bg-violet-100 text-violet-700',
+  };
+  return <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap ${map[color] || map.slate}`}>{children}</span>;
+}
+
+function priorityColor(p) {
+  const s = String(p || '').toLowerCase();
+  if (s === 'critical') return 'red';
+  if (s === 'high') return 'yellow';
+  if (s === 'medium') return 'blue';
+  return 'slate';
+}
+function statusColor(s) {
+  const v = String(s || '').toLowerCase();
+  if (v === 'completed' || v === 'closed') return 'green';
+  if (v.includes('blocked')) return 'red';
+  if (v.includes('waiting')) return 'yellow';
+  return 'blue';
+}
+
+function Card({ children, className = '' }) {
+  return <div className={`bg-white rounded-2xl shadow-sm border border-slate-200 p-4 ${className}`}>{children}</div>;
+}
+function Button({ children, onClick, variant = 'primary', className = '', type = 'button', disabled }) {
+  const styles = {
+    primary: 'bg-teal-700 text-white hover:bg-teal-800',
+    ghost: 'bg-white text-teal-700 border border-teal-700 hover:bg-teal-50',
+    danger: 'bg-rose-600 text-white hover:bg-rose-700',
+  };
+  return (
+    <button type={type} disabled={disabled} onClick={onClick}
+      className={`px-3 py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50 ${styles[variant]} ${className}`}>
+      {children}
+    </button>
+  );
+}
+function Field({ label, children }) {
+  return (
+    <label className="block mb-3">
+      <span className="block text-xs font-semibold text-slate-500 mb-1">{label}</span>
+      {children}
+    </label>
+  );
+}
+const inputCls = "w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600";
+
+function Modal({ title, onClose, children, wide }) {
+  return (
+    <div className="fixed inset-0 bg-black/40 z-40 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()}
+        className={`bg-white rounded-t-2xl sm:rounded-2xl w-full ${wide ? 'sm:max-w-2xl' : 'sm:max-w-md'} max-h-[92vh] overflow-y-auto p-5 shadow-xl`}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-lg text-slate-800">{title}</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-xl leading-none px-2">✕</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+function Spinner() {
+  return <div className="flex justify-center py-10"><div className="w-8 h-8 border-4 border-teal-200 border-t-teal-700 rounded-full animate-spin"></div></div>;
+}
+function EmptyState({ text }) {
+  return <div className="text-center text-slate-400 text-sm py-10">{text}</div>;
+}
+
+// ------------------------------------------------------------
+// Login
+// ------------------------------------------------------------
+function LoginScreen({ onLogin }) {
+  const [name, setName] = useState('');
+  const [pin, setPin] = useState('');
+  const [err, setErr] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setErr('');
+    setLoading(true);
+    const res = await api('login', { name, pin });
+    setLoading(false);
+    if (res.ok) {
+      localStorage.setItem('pt_token', res.token);
+      localStorage.setItem('pt_user', JSON.stringify(res.user));
+      onLogin(res.user, res.token);
+    } else {
+      setErr(res.error || 'Login gagal.');
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-b from-teal-700 to-teal-900">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-6 text-white">
+          <div className="text-4xl mb-2">🌞</div>
+          <h1 className="text-xl font-bold">Weekly Plant Management Tracker</h1>
+          <p className="text-teal-100 text-sm mt-1">Login untuk teruskan</p>
+        </div>
+        <Card>
+          <form onSubmit={submit}>
+            <Field label="Nama">
+              <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="cth: Iqbal" autoFocus />
+            </Field>
+            <Field label="PIN">
+              <input className={inputCls} type="password" inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value)} placeholder="****" />
+            </Field>
+            {err && <div className="text-rose-600 text-sm mb-3">{err}</div>}
+            <Button type="submit" className="w-full" disabled={loading}>{loading ? 'Sila tunggu...' : 'Log Masuk'}</Button>
+          </form>
+        </Card>
+        <p className="text-center text-teal-200 text-xs mt-4">Default admin: Admin / 1234 (tukar selepas login pertama)</p>
+      </div>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------
+// Dashboard
+// ------------------------------------------------------------
+function DashboardView({ user, lists }) {
+  const [weekStart, setWeekStart] = useState(mondayOf(toISO(new Date())));
+  const [plantFilter, setPlantFilter] = useState(user.role === 'Supervisor' ? user.plant : 'ALL');
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const res = await api('getDashboard', { weekStart, plantFilter });
+    if (res.ok) setData(res);
+    setLoading(false);
+  }, [weekStart, plantFilter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <div className="flex flex-wrap gap-3 items-end">
+          <Field label="Week Start (Isnin)">
+            <input type="date" className={inputCls} value={weekStart} onChange={(e) => setWeekStart(mondayOf(e.target.value))} />
+          </Field>
+          {user.role !== 'Supervisor' && (
+            <Field label="Plant Filter">
+              <select className={inputCls} value={plantFilter} onChange={(e) => setPlantFilter(e.target.value)}>
+                <option value="ALL">ALL</option>
+                {lists.plants.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </Field>
+          )}
+          <Button onClick={load}>Refresh</Button>
+        </div>
+      </Card>
+
+      {loading && <Spinner />}
+      {!loading && data && (
+        <React.Fragment>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <StatTile label="Updates Submitted" value={data.totals.updatesSubmitted} color="green" />
+            <StatTile label="Attention Items" value={data.totals.totalAttentionItems} color="yellow" />
+            <StatTile label="Oldest Pending (hari)" value={data.totals.oldestPendingOverall} color="red" />
+            <StatTile label="HQ Tasks Pending" value={data.totals.totalHqPending} color="blue" />
+          </div>
+
+          <Card>
+            <h3 className="font-bold text-slate-700 mb-3">Cross-Plant Summary</h3>
+            <div className="space-y-2">
+              {data.summary.map((s) => (
+                <div key={s.plant} className="border border-slate-200 rounded-xl p-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                  <div className="font-bold text-slate-800 w-36">{s.plant}</div>
+                  <div>Update: <Badge color={s.weeklyUpdate === 'YES' ? 'green' : 'red'}>{s.weeklyUpdate}</Badge></div>
+                  <div>Attention: <Badge color={s.attentionItems > 0 ? 'yellow' : 'slate'}>{s.attentionItems}</Badge></div>
+                  <div>Oldest Pending: <Badge color={s.oldestPending > 7 ? 'red' : 'slate'}>{s.oldestPending}d</Badge></div>
+                  <div>HQ Pending: <Badge color={s.hqPending > 0 ? 'blue' : 'slate'}>{s.hqPending}</Badge></div>
+                  <div>Equipment: <Badge color="slate">{s.equipmentAvailable} available</Badge></div>
+                  <div>Headcount terendah: <Badge color={s.lowestHeadcount === 'NOT UPDATED' ? 'slate' : (s.lowestHeadcount < 2 ? 'red' : 'green')}>{s.lowestHeadcount}</Badge></div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </React.Fragment>
+      )}
+    </div>
+  );
+}
+function StatTile({ label, value, color }) {
+  const map = { green: 'text-emerald-600', yellow: 'text-amber-600', red: 'text-rose-600', blue: 'text-sky-600' };
+  return (
+    <Card className="text-center">
+      <div className={`text-3xl font-extrabold ${map[color]}`}>{value}</div>
+      <div className="text-xs text-slate-500 mt-1">{label}</div>
+    </Card>
+  );
+}
+
+// ------------------------------------------------------------
+// Supervisor Update
+// ------------------------------------------------------------
+const ROW_LABELS = [
+  { n: 1, title: 'Generation / Key Pending Issue' },
+  { n: 2, title: 'Equipment / Routine O&M or CBM' },
+  { n: 3, title: 'Routine O&M Result / Training or Improvement' },
+];
+function SupervisorUpdateView({ user, lists }) {
+  const [weekStart, setWeekStart] = useState(mondayOf(toISO(new Date())));
+  const [plant, setPlant] = useState(user.role === 'Supervisor' ? user.plant : (lists.plants[0] || ''));
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+  const canEdit = user.role !== 'HQ';
+
+  const load = useCallback(async () => {
+    if (!plant) return;
+    setLoading(true);
+    const res = await api('getSupervisorUpdate', { weekStart, plant });
+    if (res.ok) {
+      const byType = {};
+      res.rows.forEach((r) => byType[r.RowType] = r);
+      setRows([1, 2, 3].map((n) => ({
+        rowType: n,
+        lastWeekOutcome: byType[n]?.LastWeekOutcome || '',
+        thisWeekPriority: byType[n]?.ThisWeekPriority || '',
+        remarks: byType[n]?.Remarks || '',
+      })));
+    }
+    setLoading(false);
+  }, [weekStart, plant]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const updateRow = (idx, field, val) => {
+    setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, [field]: val } : r)));
+  };
+
+  const save = async () => {
+    setSaving(true);
+    setMsg('');
+    const res = await api('saveSupervisorUpdate', {
+      weekStart, weekEnd: addDays(weekStart, 6), plant, supervisor: user.name, rows,
+    });
+    setSaving(false);
+    setMsg(res.ok ? 'Berjaya disimpan.' : (res.error || 'Gagal simpan.'));
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <div className="flex flex-wrap gap-3 items-end">
+          <Field label="Week Start (Isnin)">
+            <input type="date" className={inputCls} value={weekStart} onChange={(e) => setWeekStart(mondayOf(e.target.value))} />
+          </Field>
+          {user.role !== 'Supervisor' && (
+            <Field label="Plant">
+              <select className={inputCls} value={plant} onChange={(e) => setPlant(e.target.value)}>
+                {lists.plants.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </Field>
+          )}
+        </div>
+        <p className="text-xs text-slate-500 mt-1">Tulis result + reason / action ringkas, bukan sekadar "Done" / "Pending". Kalau tak berkenaan, tulis N/A.</p>
+      </Card>
+
+      {loading ? <Spinner /> : (
+        <div className="space-y-4">
+          {rows.map((r, idx) => (
+            <Card key={r.rowType}>
+              <h3 className="font-bold text-slate-700 mb-3">Row {r.rowType} — {ROW_LABELS[idx].title}</h3>
+              <Field label="LAST WEEK OUTCOME">
+                <textarea className={inputCls} rows={2} disabled={!canEdit} value={r.lastWeekOutcome} onChange={(e) => updateRow(idx, 'lastWeekOutcome', e.target.value)} />
+              </Field>
+              <Field label="THIS WEEK PRIORITY">
+                <textarea className={inputCls} rows={2} disabled={!canEdit} value={r.thisWeekPriority} onChange={(e) => updateRow(idx, 'thisWeekPriority', e.target.value)} />
+              </Field>
+              <Field label="Remarks">
+                <input className={inputCls} disabled={!canEdit} value={r.remarks} onChange={(e) => updateRow(idx, 'remarks', e.target.value)} />
+              </Field>
+            </Card>
+          ))}
+          {canEdit && (
+            <div className="flex items-center gap-3">
+              <Button onClick={save} disabled={saving}>{saving ? 'Menyimpan...' : 'Simpan Update'}</Button>
+              {msg && <span className="text-sm text-slate-600">{msg}</span>}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------
+// Manager Attention
+// ------------------------------------------------------------
+function ManagerAttentionView({ user, lists }) {
+  const [plantFilter, setPlantFilter] = useState('ALL');
+  const [openOnly, setOpenOnly] = useState(true);
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [editRow, setEditRow] = useState(null);
+  const canManage = user.role === 'Manager' || user.role === 'Admin';
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const res = await api('listManagerAttention', { plantFilter, openOnly });
+    if (res.ok) setRows(res.rows);
+    setLoading(false);
+  }, [plantFilter, openOnly]);
+
+  useEffect(() => { load(); }, [load]);
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <div className="flex flex-wrap gap-3 items-end justify-between">
+          <div className="flex flex-wrap gap-3 items-end">
+            {user.role !== 'Supervisor' && (
+              <Field label="Plant">
+                <select className={inputCls} value={plantFilter} onChange={(e) => setPlantFilter(e.target.value)}>
+                  <option value="ALL">ALL</option>
+                  {lists.plants.map((p) => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </Field>
+            )}
+            <label className="flex items-center gap-2 text-sm mb-3">
+              <input type="checkbox" checked={openOnly} onChange={(e) => setOpenOnly(e.target.checked)} />
+              Open sahaja
+            </label>
+          </div>
+          {canManage && <Button onClick={() => setShowAdd(true)}>+ Tambah Item</Button>}
+        </div>
+      </Card>
+
+      {loading ? <Spinner /> : rows.length === 0 ? <EmptyState text="Tiada item." /> : (
+        <div className="space-y-2">
+          {rows.map((r) => (
+            <Card key={r.ID} className={canManage ? 'cursor-pointer hover:border-teal-400' : ''}>
+              <div onClick={() => canManage && setEditRow(r)}>
+                <div className="flex justify-between items-start gap-2">
+                  <div className="font-bold text-slate-800">{r.Plant}</div>
+                  <div className="flex gap-1">
+                    <Badge color={priorityColor(r.Priority)}>{r.Priority}</Badge>
+                    <Badge color={statusColor(r.Status)}>{r.Status}</Badge>
+                  </div>
+                </div>
+                <div className="text-sm mt-1">{r.AttentionItem}</div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 mt-2">
+                  <span>Raised: {fmtDate(r.DateRaised)}</span>
+                  <span>Pending: <b className={r.PendingDays > 14 ? 'text-rose-600' : ''}>{r.PendingDays}d</b></span>
+                  {r.HQSupportAssigned && <span>HQ: {r.HQSupportAssigned}</span>}
+                  {r.LatestHQUpdate && <span>Update terkini: {r.LatestHQUpdate}</span>}
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {showAdd && (
+        <AddAttentionModal lists={lists} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />
+      )}
+      {editRow && (
+        <EditAttentionModal row={editRow} lists={lists} onClose={() => setEditRow(null)} onSaved={() => { setEditRow(null); load(); }} />
+      )}
+    </div>
+  );
+}
+
+function AddAttentionModal({ lists, onClose, onSaved }) {
+  const [plant, setPlant] = useState(lists.plants[0] || '');
+  const [dateRaised, setDateRaised] = useState(toISO(new Date()));
+  const [item, setItem] = useState('');
+  const [priority, setPriority] = useState(lists.priorities[0] || 'Medium');
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    const res = await api('addManagerAttention', { plant, dateRaised, attentionItem: item, priority });
+    setSaving(false);
+    if (res.ok) onSaved(); else alert(res.error || 'Gagal simpan.');
+  };
+
+  return (
+    <Modal title="Tambah Attention Item" onClose={onClose}>
+      <Field label="Plant"><select className={inputCls} value={plant} onChange={(e) => setPlant(e.target.value)}>{lists.plants.map((p) => <option key={p}>{p}</option>)}</select></Field>
+      <Field label="Date Raised"><input type="date" className={inputCls} value={dateRaised} onChange={(e) => setDateRaised(e.target.value)} /></Field>
+      <Field label="Attention Item / Request"><textarea className={inputCls} rows={3} value={item} onChange={(e) => setItem(e.target.value)} /></Field>
+      <Field label="Priority"><select className={inputCls} value={priority} onChange={(e) => setPriority(e.target.value)}>{lists.priorities.map((p) => <option key={p}>{p}</option>)}</select></Field>
+      <Button className="w-full" onClick={save} disabled={saving || !item}>{saving ? 'Menyimpan...' : 'Simpan'}</Button>
+    </Modal>
+  );
+}
+
+function EditAttentionModal({ row, lists, onClose, onSaved }) {
+  const [status, setStatus] = useState(row.Status);
+  const [hq, setHq] = useState(row.HQSupportAssigned || '');
+  const [hqDate, setHqDate] = useState(row.HQAssignedDate ? toISO(row.HQAssignedDate) : '');
+  const [hqExpected, setHqExpected] = useState(row.HQExpectedCompletion ? toISO(row.HQExpectedCompletion) : '');
+  const [remarks, setRemarks] = useState(row.ManagerRemarks || '');
+  const [createTask, setCreateTask] = useState(!row.HQSupportAssigned);
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    const hqChanged = hq && hq !== row.HQSupportAssigned;
+    if (hqChanged && createTask) {
+      await api('addHqTask', {
+        taskAction: row.AttentionItem, plantScope: row.Plant, priority: row.Priority,
+        hqAssigned: hq, assignedDate: hqDate || toISO(new Date()), expectedCompletion: hqExpected,
+        status: 'Assigned to HQ', linkedAttentionId: row.ID,
+      });
+    }
+    const res = await api('updateManagerAttention', {
+      id: row.ID,
+      fields: { Status: status, HQSupportAssigned: hq, HQAssignedDate: hqDate, HQExpectedCompletion: hqExpected, ManagerRemarks: remarks },
+    });
+    setSaving(false);
+    if (res.ok) onSaved(); else alert(res.error || 'Gagal simpan.');
+  };
+
+  return (
+    <Modal title={`Urus Item — ${row.Plant}`} onClose={onClose} wide>
+      <p className="text-sm bg-slate-50 border border-slate-200 rounded-lg p-3 mb-3">{row.AttentionItem}</p>
+      <div className="grid sm:grid-cols-2 gap-x-4">
+        <Field label="Status"><select className={inputCls} value={status} onChange={(e) => setStatus(e.target.value)}>{lists.attentionStatuses.map((s) => <option key={s}>{s}</option>)}</select></Field>
+        <Field label="HQ Support Assigned"><select className={inputCls} value={hq} onChange={(e) => setHq(e.target.value)}><option value="">-</option>{lists.hqMembers.map((m) => <option key={m}>{m}</option>)}</select></Field>
+        <Field label="HQ Assigned Date"><input type="date" className={inputCls} value={hqDate} onChange={(e) => setHqDate(e.target.value)} /></Field>
+        <Field label="HQ Expected Completion"><input type="date" className={inputCls} value={hqExpected} onChange={(e) => setHqExpected(e.target.value)} /></Field>
+      </div>
+      {hq && hq !== row.HQSupportAssigned && (
+        <label className="flex items-center gap-2 text-sm mb-3">
+          <input type="checkbox" checked={createTask} onChange={(e) => setCreateTask(e.target.checked)} />
+          Cipta rekod dalam HQ Team Tasks untuk {hq}
+        </label>
+      )}
+      <Field label="Manager Remarks"><textarea className={inputCls} rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} /></Field>
+      {row.LatestHQUpdate && <p className="text-xs text-slate-500 mb-2">Latest HQ update: {row.LatestHQUpdate} {row.HQCompletionDate ? `(selesai ${fmtDate(row.HQCompletionDate)})` : ''}</p>}
+      <Button className="w-full" onClick={save} disabled={saving}>{saving ? 'Menyimpan...' : 'Simpan'}</Button>
+    </Modal>
+  );
+}
+
+// ------------------------------------------------------------
+// HQ Tasks
+// ------------------------------------------------------------
+function HqTasksView({ user, lists }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [plantFilter, setPlantFilter] = useState('ALL');
+  const [showAdd, setShowAdd] = useState(false);
+  const [editRow, setEditRow] = useState(null);
+  const canManage = user.role === 'Manager' || user.role === 'Admin';
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const res = await api('listHqTasks', { plantFilter, mineOnly: user.role === 'HQ' });
+    if (res.ok) setRows(res.rows);
+    setLoading(false);
+  }, [plantFilter, user.role]);
+
+  useEffect(() => { load(); }, [load]);
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <div className="flex flex-wrap gap-3 items-end justify-between">
+          {canManage && (
+            <Field label="Plant">
+              <select className={inputCls} value={plantFilter} onChange={(e) => setPlantFilter(e.target.value)}>
+                <option value="ALL">ALL</option>
+                {lists.plants.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </Field>
+          )}
+          {canManage && <Button onClick={() => setShowAdd(true)}>+ Tambah Tugasan</Button>}
+        </div>
+      </Card>
+
+      {loading ? <Spinner /> : rows.length === 0 ? <EmptyState text="Tiada tugasan." /> : (
+        <div className="space-y-2">
+          {rows.map((r) => (
+            <Card key={r.ID} className="cursor-pointer hover:border-teal-400" >
+              <div onClick={() => setEditRow(r)}>
+                <div className="flex justify-between items-start gap-2">
+                  <div className="font-bold text-slate-800">{r.PlantScope} — {r.HQAssigned}</div>
+                  <div className="flex gap-1">
+                    <Badge color={priorityColor(r.Priority)}>{r.Priority}</Badge>
+                    <Badge color={statusColor(r.Status)}>{r.Status}</Badge>
+                  </div>
+                </div>
+                <div className="text-sm mt-1">{r.TaskAction}</div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 mt-2">
+                  <span>Assigned: {fmtDate(r.AssignedDate)}</span>
+                  <span>ETA: {fmtDate(r.ExpectedCompletion)}</span>
+                  <span>Pending: {r.PendingDays}d</span>
+                  {r.DelayDays > 0 && <Badge color="red">Lewat {r.DelayDays}d</Badge>}
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {showAdd && <AddHqTaskModal lists={lists} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />}
+      {editRow && <EditHqTaskModal row={editRow} lists={lists} onClose={() => setEditRow(null)} onSaved={() => { setEditRow(null); load(); }} />}
+    </div>
+  );
+}
+
+function AddHqTaskModal({ lists, onClose, onSaved }) {
+  const [taskAction, setTaskAction] = useState('');
+  const [plantScope, setPlantScope] = useState(lists.plants[0] || '');
+  const [priority, setPriority] = useState(lists.priorities[0] || 'Medium');
+  const [hqAssigned, setHqAssigned] = useState(lists.hqMembers[0] || '');
+  const [assignedDate, setAssignedDate] = useState(toISO(new Date()));
+  const [expectedCompletion, setExpectedCompletion] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    const res = await api('addHqTask', { taskAction, plantScope, priority, hqAssigned, assignedDate, expectedCompletion });
+    setSaving(false);
+    if (res.ok) onSaved(); else alert(res.error || 'Gagal simpan.');
+  };
+
+  return (
+    <Modal title="Tambah Tugasan HQ" onClose={onClose}>
+      <Field label="Task / Action"><textarea className={inputCls} rows={2} value={taskAction} onChange={(e) => setTaskAction(e.target.value)} /></Field>
+      <Field label="Plant / Scope"><select className={inputCls} value={plantScope} onChange={(e) => setPlantScope(e.target.value)}>{lists.plants.map((p) => <option key={p}>{p}</option>)}</select></Field>
+      <Field label="Priority"><select className={inputCls} value={priority} onChange={(e) => setPriority(e.target.value)}>{lists.priorities.map((p) => <option key={p}>{p}</option>)}</select></Field>
+      <Field label="HQ Support Assigned"><select className={inputCls} value={hqAssigned} onChange={(e) => setHqAssigned(e.target.value)}>{lists.hqMembers.map((m) => <option key={m}>{m}</option>)}</select></Field>
+      <Field label="Assigned Date"><input type="date" className={inputCls} value={assignedDate} onChange={(e) => setAssignedDate(e.target.value)} /></Field>
+      <Field label="Expected Completion"><input type="date" className={inputCls} value={expectedCompletion} onChange={(e) => setExpectedCompletion(e.target.value)} /></Field>
+      <Button className="w-full" onClick={save} disabled={saving || !taskAction}>{saving ? 'Menyimpan...' : 'Simpan'}</Button>
+    </Modal>
+  );
+}
+
+function EditHqTaskModal({ row, lists, onClose, onSaved }) {
+  const [status, setStatus] = useState(row.Status);
+  const [latestUpdate, setLatestUpdate] = useState(row.LatestUpdate || '');
+  const [completionDate, setCompletionDate] = useState(row.CompletionDate ? toISO(row.CompletionDate) : '');
+  const [remarks, setRemarks] = useState(row.ManagerRemarks || '');
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    const res = await api('updateHqTask', {
+      id: row.ID,
+      fields: { Status: status, LatestUpdate: latestUpdate, CompletionDate: completionDate, ManagerRemarks: remarks },
+    });
+    setSaving(false);
+    if (res.ok) onSaved(); else alert(res.error || 'Gagal simpan.');
+  };
+
+  return (
+    <Modal title={`Kemaskini Tugasan — ${row.PlantScope}`} onClose={onClose} wide>
+      <p className="text-sm bg-slate-50 border border-slate-200 rounded-lg p-3 mb-3">{row.TaskAction}</p>
+      <Field label="Status"><select className={inputCls} value={status} onChange={(e) => setStatus(e.target.value)}>{lists.attentionStatuses.map((s) => <option key={s}>{s}</option>)}</select></Field>
+      <Field label="Latest Update"><textarea className={inputCls} rows={2} value={latestUpdate} onChange={(e) => setLatestUpdate(e.target.value)} /></Field>
+      <Field label="Completion Date"><input type="date" className={inputCls} value={completionDate} onChange={(e) => setCompletionDate(e.target.value)} /></Field>
+      <Field label="Manager Remarks"><textarea className={inputCls} rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} /></Field>
+      <Button className="w-full" onClick={save} disabled={saving}>{saving ? 'Menyimpan...' : 'Simpan'}</Button>
+    </Modal>
+  );
+}
+
+// ------------------------------------------------------------
+// Equipment Tracker
+// ------------------------------------------------------------
+function EquipmentView({ user, lists }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editRow, setEditRow] = useState(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const canManage = user.role !== 'Supervisor';
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const res = await api('listEquipment');
+    if (res.ok) setRows(res.rows);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  return (
+    <div className="space-y-4">
+      {canManage && <div className="flex justify-end"><Button onClick={() => setShowAdd(true)}>+ Tambah Equipment</Button></div>}
+      {loading ? <Spinner /> : rows.length === 0 ? <EmptyState text="Tiada equipment." /> : (
+        <div className="space-y-2">
+          {rows.map((r) => (
+            <Card key={r.ID} className={canManage ? 'cursor-pointer hover:border-teal-400' : ''}>
+              <div onClick={() => canManage && setEditRow(r)}>
+                <div className="flex justify-between items-start gap-2">
+                  <div className="font-bold text-slate-800">{r.EquipmentUnit}</div>
+                  <Badge color={r.Status === 'Available' ? 'green' : r.Status === 'Under Repair' ? 'red' : 'blue'}>{r.Status}</Badge>
+                </div>
+                <div className="text-sm text-slate-600 mt-1">Plant semasa: {r.CurrentPlant}</div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 mt-2">
+                  {r.PlannedFinish && <span>Planned finish: {fmtDate(r.PlannedFinish)}</span>}
+                  {r.NextRequestingPlant && <span>Next: {r.NextRequestingPlant}</span>}
+                  {r.HQLogisticsContact && <span>Contact: {r.HQLogisticsContact}</span>}
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+      {showAdd && <EquipmentModal lists={lists} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />}
+      {editRow && <EquipmentModal row={editRow} lists={lists} onClose={() => setEditRow(null)} onSaved={() => { setEditRow(null); load(); }} />}
+    </div>
+  );
+}
+
+function EquipmentModal({ row, lists, onClose, onSaved }) {
+  const [unit, setUnit] = useState(row?.EquipmentUnit || lists.equipmentNames[0] || '');
+  const [plant, setPlant] = useState(row?.CurrentPlant || lists.plants[0] || '');
+  const [status, setStatus] = useState(row?.Status || lists.equipmentStatuses[0] || '');
+  const [plannedFinish, setPlannedFinish] = useState(row?.PlannedFinish ? toISO(row.PlannedFinish) : '');
+  const [nextPlant, setNextPlant] = useState(row?.NextRequestingPlant || '');
+  const [contact, setContact] = useState(row?.HQLogisticsContact || '');
+  const [remarks, setRemarks] = useState(row?.Remarks || '');
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    const fields = { EquipmentUnit: unit, CurrentPlant: plant, Status: status, PlannedFinish: plannedFinish, NextRequestingPlant: nextPlant, HQLogisticsContact: contact, Remarks: remarks };
+    const res = await api('upsertEquipment', row ? { id: row.ID, fields } : { fields });
+    setSaving(false);
+    if (res.ok) onSaved(); else alert(res.error || 'Gagal simpan.');
+  };
+
+  return (
+    <Modal title={row ? 'Kemaskini Equipment' : 'Tambah Equipment'} onClose={onClose}>
+      <Field label="Equipment / Unit"><input className={inputCls} value={unit} onChange={(e) => setUnit(e.target.value)} list="equipList" /></Field>
+      <datalist id="equipList">{lists.equipmentNames.map((n) => <option key={n} value={n} />)}</datalist>
+      <Field label="Current Plant"><select className={inputCls} value={plant} onChange={(e) => setPlant(e.target.value)}>{lists.plants.map((p) => <option key={p}>{p}</option>)}</select></Field>
+      <Field label="Status"><select className={inputCls} value={status} onChange={(e) => setStatus(e.target.value)}>{lists.equipmentStatuses.map((s) => <option key={s}>{s}</option>)}</select></Field>
+      <Field label="Planned Finish"><input type="date" className={inputCls} value={plannedFinish} onChange={(e) => setPlannedFinish(e.target.value)} /></Field>
+      <Field label="Next Requesting Plant"><select className={inputCls} value={nextPlant} onChange={(e) => setNextPlant(e.target.value)}><option value="">-</option>{lists.plants.map((p) => <option key={p}>{p}</option>)}</select></Field>
+      <Field label="HQ Logistics Contact"><input className={inputCls} value={contact} onChange={(e) => setContact(e.target.value)} /></Field>
+      <Field label="Remarks"><input className={inputCls} value={remarks} onChange={(e) => setRemarks(e.target.value)} /></Field>
+      <Button className="w-full" onClick={save} disabled={saving || !unit}>{saving ? 'Menyimpan...' : 'Simpan'}</Button>
+    </Modal>
+  );
+}
+
+// ------------------------------------------------------------
+// Weekly Manpower
+// ------------------------------------------------------------
+const DAYS = [
+  { key: 'mon', rep: 'monRep', label: 'Isnin' },
+  { key: 'tue', rep: 'tueRep', label: 'Selasa' },
+  { key: 'wed', rep: 'wedRep', label: 'Rabu' },
+  { key: 'thu', rep: 'thuRep', label: 'Khamis' },
+  { key: 'fri', rep: 'friRep', label: 'Jumaat' },
+  { key: 'sat', rep: 'satRep', label: 'Sabtu' },
+];
+function ManpowerView({ user, lists }) {
+  const [weekStart, setWeekStart] = useState(mondayOf(toISO(new Date())));
+  const [plant, setPlant] = useState(user.role === 'Supervisor' ? user.plant : (lists.plants[0] || ''));
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+  const canEdit = user.role !== 'HQ';
+
+  const load = useCallback(async () => {
+    if (!plant) return;
+    setLoading(true);
+    const res = await api('getManpower', { weekStart, plant });
+    if (res.ok) {
+      setRows(res.rows.map((r) => ({
+        staffName: r.StaffName, mon: r.MonStatus, monRep: r.MonReplacement, tue: r.TueStatus, tueRep: r.TueReplacement,
+        wed: r.WedStatus, wedRep: r.WedReplacement, thu: r.ThuStatus, thuRep: r.ThuReplacement,
+        fri: r.FriStatus, friRep: r.FriReplacement, sat: r.SatStatus, satRep: r.SatReplacement,
+      })));
+    }
+    setLoading(false);
+  }, [weekStart, plant]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const addStaff = () => setRows((prev) => [...prev, { staffName: '', mon: 'W', tue: 'W', wed: 'W', thu: 'W', fri: 'W', sat: 'W' }]);
+  const removeStaff = (idx) => setRows((prev) => prev.filter((_, i) => i !== idx));
+  const updateCell = (idx, field, val) => setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, [field]: val } : r)));
+
+  const isRedRow = (r) => DAYS.some((d) => r[d.key] && r[d.key] !== 'W' && r[d.key] !== 'OFF' && !r[d.rep]);
+
+  const save = async () => {
+    setSaving(true);
+    setMsg('');
+    const res = await api('saveManpower', { weekStart, plant, rows: rows.filter((r) => r.staffName) });
+    setSaving(false);
+    setMsg(res.ok ? 'Berjaya disimpan.' : (res.error || 'Gagal simpan.'));
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <div className="flex flex-wrap gap-3 items-end">
+          <Field label="Week Start (Isnin)"><input type="date" className={inputCls} value={weekStart} onChange={(e) => setWeekStart(mondayOf(e.target.value))} /></Field>
+          {user.role !== 'Supervisor' && (
+            <Field label="Plant"><select className={inputCls} value={plant} onChange={(e) => setPlant(e.target.value)}>{lists.plants.map((p) => <option key={p} value={p}>{p}</option>)}</select></Field>
+          )}
+        </div>
+        <p className="text-xs text-slate-500">W = Kerja | OFF = Rehat | AL/UL/EL/MC/OTHER = Cuti. Baris merah = cuti tanpa replacement.</p>
+      </Card>
+
+      {loading ? <Spinner /> : (
+        <div className="space-y-3">
+          {rows.map((r, idx) => (
+            <Card key={idx} className={isRedRow(r) ? 'border-rose-400 bg-rose-50' : ''}>
+              <div className="flex items-center gap-2 mb-3">
+                <input className={`${inputCls} font-semibold`} placeholder="Nama staff" disabled={!canEdit} value={r.staffName} onChange={(e) => updateCell(idx, 'staffName', e.target.value)} />
+                {canEdit && <button onClick={() => removeStaff(idx)} className="text-rose-500 text-sm px-2">Buang</button>}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                {DAYS.map((d) => (
+                  <div key={d.key} className="border border-slate-200 rounded-lg p-2">
+                    <div className="text-xs font-bold text-slate-500 mb-1">{d.label}</div>
+                    <select disabled={!canEdit} className="w-full text-sm border border-slate-200 rounded px-1 py-1 mb-1" value={r[d.key] || 'W'} onChange={(e) => updateCell(idx, d.key, e.target.value)}>
+                      {lists.manpowerCodes.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <input disabled={!canEdit} placeholder="ganti" className="w-full text-sm border border-slate-200 rounded px-1 py-1" value={r[d.rep] || ''} onChange={(e) => updateCell(idx, d.rep, e.target.value)} />
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ))}
+          {canEdit && (
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="ghost" onClick={addStaff}>+ Tambah Staff</Button>
+              <Button onClick={save} disabled={saving}>{saving ? 'Menyimpan...' : 'Simpan Manpower'}</Button>
+              {msg && <span className="text-sm text-slate-600">{msg}</span>}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------
+// Admin
+// ------------------------------------------------------------
+function AdminView({ lists, refreshLists }) {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editUser, setEditUser] = useState(null);
+  const [newPlant, setNewPlant] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const res = await api('listUsers');
+    if (res.ok) setUsers(res.rows);
+    setLoading(false);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const addPlant = async () => {
+    if (!newPlant.trim()) return;
+    await api('upsertPlant', { plantName: newPlant.trim() });
+    setNewPlant('');
+    refreshLists();
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="font-bold text-slate-700">Users</h3>
+          <Button onClick={() => setEditUser({})}>+ Tambah User</Button>
+        </div>
+        {loading ? <Spinner /> : (
+          <div className="space-y-2">
+            {users.map((u) => (
+              <div key={u.ID} className="border border-slate-200 rounded-xl p-3 flex flex-wrap items-center gap-3 text-sm cursor-pointer hover:border-teal-400" onClick={() => setEditUser(u)}>
+                <div className="font-semibold w-32">{u.Name}</div>
+                <Badge color="blue">{u.Role}</Badge>
+                <div className="text-slate-500">{u.Plant}</div>
+                <Badge color={String(u.Active).toUpperCase() === 'N' ? 'red' : 'green'}>{String(u.Active).toUpperCase() === 'N' ? 'Tidak Aktif' : 'Aktif'}</Badge>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <h3 className="font-bold text-slate-700 mb-3">Plants</h3>
+        <div className="flex flex-wrap gap-2 mb-3">
+          {lists.plants.map((p) => <Badge key={p} color="slate">{p}</Badge>)}
+        </div>
+        <div className="flex gap-2">
+          <input className={inputCls} placeholder="Nama plant baru" value={newPlant} onChange={(e) => setNewPlant(e.target.value)} />
+          <Button onClick={addPlant}>Tambah</Button>
+        </div>
+      </Card>
+
+      {editUser && (
+        <UserModal user={editUser} lists={lists} onClose={() => setEditUser(null)} onSaved={() => { setEditUser(null); load(); }} />
+      )}
+    </div>
+  );
+}
+
+function UserModal({ user, lists, onClose, onSaved }) {
+  const [name, setName] = useState(user.Name || '');
+  const [plant, setPlant] = useState(user.Plant || lists.plants[0] || '');
+  const [role, setRole] = useState(user.Role || 'Supervisor');
+  const [pin, setPin] = useState(user.PIN || '');
+  const [active, setActive] = useState(String(user.Active || 'Y').toUpperCase() !== 'N');
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    const fields = { Name: name, Plant: plant, Role: role, PIN: pin, Active: active ? 'Y' : 'N' };
+    const res = await api('upsertUser', user.ID ? { id: user.ID, fields } : { fields });
+    setSaving(false);
+    if (res.ok) onSaved(); else alert(res.error || 'Gagal simpan.');
+  };
+
+  return (
+    <Modal title={user.ID ? 'Kemaskini User' : 'Tambah User'} onClose={onClose}>
+      <Field label="Nama"><input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} /></Field>
+      <Field label="Role">
+        <select className={inputCls} value={role} onChange={(e) => setRole(e.target.value)}>
+          <option>Supervisor</option><option>Manager</option><option>HQ</option><option>Admin</option>
+        </select>
+      </Field>
+      <Field label="Plant">
+        <select className={inputCls} value={plant} onChange={(e) => setPlant(e.target.value)}>
+          <option value="ALL">ALL (Manager/Admin/HQ)</option>
+          {lists.plants.map((p) => <option key={p} value={p}>{p}</option>)}
+        </select>
+      </Field>
+      <Field label="PIN"><input className={inputCls} value={pin} onChange={(e) => setPin(e.target.value)} /></Field>
+      <label className="flex items-center gap-2 text-sm mb-3">
+        <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Aktif
+      </label>
+      <Button className="w-full" onClick={save} disabled={saving || !name || !pin}>{saving ? 'Menyimpan...' : 'Simpan'}</Button>
+    </Modal>
+  );
+}
+
+// ------------------------------------------------------------
+// App shell
+// ------------------------------------------------------------
+function TABS_FOR_ROLE(role) {
+  // Manager has full config rights (same as Admin) — this app is built manager-first.
+  if (role === 'Admin' || role === 'Manager') return ['Dashboard', 'Supervisor Update', 'Manager Attention', 'HQ Tasks', 'Equipment', 'Manpower', 'Users & Plants'];
+  if (role === 'HQ') return ['HQ Tasks', 'Equipment'];
+  return ['Supervisor Update', 'Manager Attention', 'Equipment', 'Manpower']; // Supervisor
+}
+
+function App() {
+  const [user, setUser] = useState(() => {
+    const raw = localStorage.getItem('pt_user');
+    return raw ? JSON.parse(raw) : null;
+  });
+  const [lists, setLists] = useState(null);
+  const [tab, setTab] = useState('');
+
+  const loadLists = useCallback(async () => {
+    const res = await api('getLists');
+    if (res.ok) setLists(res);
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      loadLists();
+    }
+  }, [user, loadLists]);
+
+  useEffect(() => {
+    if (user && !tab) setTab(TABS_FOR_ROLE(user.role)[0]);
+  }, [user]);
+
+  const logout = () => {
+    localStorage.removeItem('pt_token');
+    localStorage.removeItem('pt_user');
+    setUser(null);
+  };
+
+  if (API_BASE_URL.includes('PASTE_YOUR')) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 bg-amber-50">
+        <Card className="max-w-md">
+          <h2 className="font-bold text-amber-700 mb-2">⚠️ Setup belum lengkap</h2>
+          <p className="text-sm text-slate-600">Tukar <code>API_BASE_URL</code> dalam index.html kepada Google Apps Script Web App URL kau (ends with <code>/exec</code>). Rujuk SETUP_PANDUAN.md.</p>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!user) return <LoginScreen onLogin={(u) => setUser(u)} />;
+  if (!lists) return <Spinner />;
+
+  const tabs = TABS_FOR_ROLE(user.role);
+
+  return (
+    <div className="min-h-screen pb-10">
+      <div className="bg-teal-800 text-white sticky top-0 z-30 shadow">
+        <div className="max-w-5xl mx-auto px-4 py-3 flex justify-between items-center">
+          <div>
+            <div className="font-bold leading-tight">Plant Tracker</div>
+            <div className="text-xs text-teal-100">{user.name} · {user.role} · {user.plant}</div>
+          </div>
+          <button onClick={logout} className="text-sm bg-teal-900/50 px-3 py-1.5 rounded-lg hover:bg-teal-900">Log Keluar</button>
+        </div>
+        <div className="max-w-5xl mx-auto px-2 flex gap-1 overflow-x-auto pb-2">
+          {tabs.map((t) => (
+            <button key={t} onClick={() => setTab(t)}
+              className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-semibold ${tab === t ? 'bg-white text-teal-800' : 'text-teal-100 hover:bg-teal-700'}`}>
+              {t}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="max-w-5xl mx-auto p-4">
+        {tab === 'Dashboard' && <DashboardView user={user} lists={lists} />}
+        {tab === 'Supervisor Update' && <SupervisorUpdateView user={user} lists={lists} />}
+        {tab === 'Manager Attention' && <ManagerAttentionView user={user} lists={lists} />}
+        {tab === 'HQ Tasks' && <HqTasksView user={user} lists={lists} />}
+        {tab === 'Equipment' && <EquipmentView user={user} lists={lists} />}
+        {tab === 'Manpower' && <ManpowerView user={user} lists={lists} />}
+        {tab === 'Users & Plants' && <AdminView lists={lists} refreshLists={loadLists} />}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
+</script>
+</body>
+</html>
