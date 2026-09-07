@@ -2,13 +2,17 @@
 <html lang="ms">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-<title>Weekly Plant Management Tracker</title>
-<meta name="description" content="Cross-plant weekly O&M tracker: supervisor updates, manager attention, HQ tasks, equipment queue and manpower planning." />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>PlantOps Tracker</title>
+<meta name="description" content="Sistem pengurusan mingguan plant: permohonan plant, tugasan HQ, mobilisasi equipment dan manpower." />
 <link rel="manifest" href="manifest.json" />
-<meta name="theme-color" content="#0f766e" />
+<meta name="theme-color" content="#0b2a66" />
 <link rel="apple-touch-icon" href="icon-192.png" />
 <link rel="icon" href="icon-192.png" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
@@ -16,60 +20,70 @@
 <script src="https://cdn.tailwindcss.com"></script>
 
 <style>
-  body { -webkit-tap-highlight-color: transparent; }
+  :root {
+    --navy: #0b2a66;
+    --navy-2: #143c8f;
+    --blue: #1d4ed8;
+    --red: #e5342b;
+    --ink: #0f172a;
+    --muted: #64748b;
+  }
+  * { font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  body { background: #e9f0fb; -webkit-tap-highlight-color: transparent; color: var(--ink); }
   ::-webkit-scrollbar { height: 6px; width: 6px; }
-  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb { background: #c7d5ea; border-radius: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  .no-bar::-webkit-scrollbar { display: none; }
+  .hero { background: linear-gradient(135deg, #0b2a66 0%, #143c8f 60%, #174aa8 100%); }
+  input, select, textarea { font-size: 16px; }
+  @media (min-width: 640px) { input, select, textarea { font-size: 14px; } }
 </style>
 </head>
-<body class="bg-slate-100 text-slate-800">
+<body>
 
 <div id="root"></div>
 
 <script type="text/babel" data-presets="react">
-const { useState, useEffect, useMemo, useCallback } = React;
+const { useState, useEffect, useCallback, useMemo } = React;
 
 // ============================================================
-// !!! WAJIB TUKAR: paste your Google Apps Script Web App URL here
-// (Deploy > New deployment > Web app > copy the URL ending with /exec)
+// !!! WAJIB TUKAR: paste Google Apps Script Web App URL kau di sini
 // ============================================================
-const API_BASE_URL = "https://script.google.com/macros/s/AKfycby7NX-v4pnu3EWaB0dRaK0DKu0Q84yPBCv6FD7-aOZUp0_pxmzTmYofR-FRh6onxyXk/exec";
+const API_BASE_URL = "https://script.google.com/macros/s/AKfycbzSUKQdVcbf-DQDOOnsmugL4OtNrZYmKJ2BSoLhQOc6VPT03jYuRUU4qCNSw_6mVn1i/exec";
+
+const DAY_KEYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const DAY_LABELS = { Mon: 'Isnin', Tue: 'Selasa', Wed: 'Rabu', Thu: 'Khamis', Fri: 'Jumaat', Sat: 'Sabtu', Sun: 'Ahad' };
+const DAY_SHORT = { Mon: 'ISN', Tue: 'SEL', Wed: 'RAB', Thu: 'KHA', Fri: 'JUM', Sat: 'SAB', Sun: 'AHD' };
 
 // ------------------------------------------------------------
-// API helper
+// API
 // ------------------------------------------------------------
 async function api(action, payload = {}) {
   const token = localStorage.getItem('pt_token') || '';
   try {
-    const res = await fetch(API_BASE_URL, {
-      method: 'POST',
-      body: JSON.stringify({ action, token, payload }),
-    });
+    const res = await fetch(API_BASE_URL, { method: 'POST', body: JSON.stringify({ action, token, payload }) });
     const data = await res.json();
     if (!data.ok && /Sesi tamat/i.test(data.error || '')) {
-      localStorage.removeItem('pt_token');
-      localStorage.removeItem('pt_user');
+      localStorage.removeItem('pt_token'); localStorage.removeItem('pt_user');
       window.location.reload();
     }
     return data;
   } catch (err) {
-    return { ok: false, error: 'Tidak dapat sambung ke server. Semak internet / API URL.' };
+    return { ok: false, error: 'Tak dapat sambung ke server. Semak internet / API URL.' };
   }
 }
 
 // ------------------------------------------------------------
-// Date helpers
+// Utils
 // ------------------------------------------------------------
 function toISO(d) {
   const dt = new Date(d);
-  const off = dt.getTimezoneOffset();
-  const local = new Date(dt.getTime() - off * 60000);
-  return local.toISOString().slice(0, 10);
+  return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
 }
 function mondayOf(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
-  const day = d.getDay(); // 0=Sun..6=Sat
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
+  const day = d.getDay();
+  d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
   return toISO(d);
 }
 function addDays(dateStr, n) {
@@ -83,70 +97,90 @@ function fmtDate(v) {
   if (isNaN(d)) return String(v);
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
-
-// ------------------------------------------------------------
-// Small UI atoms
-// ------------------------------------------------------------
-function Badge({ children, color = 'slate' }) {
-  const map = {
-    slate: 'bg-slate-200 text-slate-700',
-    green: 'bg-emerald-100 text-emerald-700',
-    red: 'bg-rose-100 text-rose-700',
-    yellow: 'bg-amber-100 text-amber-700',
-    blue: 'bg-sky-100 text-sky-700',
-    purple: 'bg-violet-100 text-violet-700',
-  };
-  return <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap ${map[color] || map.slate}`}>{children}</span>;
+function fmtDateShort(v) {
+  if (!v) return '-';
+  const d = new Date(v);
+  if (isNaN(d)) return String(v);
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
 }
-
-function priorityColor(p) {
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 12) return 'Selamat pagi';
+  if (h < 19) return 'Selamat petang';
+  return 'Selamat malam';
+}
+function initials(name) {
+  return String(name || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+}
+function priorityTone(p) {
   const s = String(p || '').toLowerCase();
-  if (s === 'critical') return 'red';
-  if (s === 'high') return 'yellow';
-  if (s === 'medium') return 'blue';
-  return 'slate';
+  if (s === 'critical') return { text: 'text-rose-600', bg: 'bg-rose-50', dot: '#e11d48', label: 'Kritikal' };
+  if (s === 'high') return { text: 'text-amber-700', bg: 'bg-amber-50', dot: '#b45309', label: 'Tinggi' };
+  if (s === 'medium') return { text: 'text-blue-700', bg: 'bg-blue-50', dot: '#1d4ed8', label: 'Sederhana' };
+  return { text: 'text-slate-600', bg: 'bg-slate-100', dot: '#64748b', label: p || 'Rendah' };
 }
-function statusColor(s) {
+function statusTone(s) {
   const v = String(s || '').toLowerCase();
-  if (v === 'completed' || v === 'closed') return 'green';
-  if (v.includes('blocked')) return 'red';
-  if (v.includes('waiting')) return 'yellow';
-  return 'blue';
+  if (v === 'completed' || v === 'closed' || v === 'returned') return 'text-emerald-600';
+  if (v.includes('blocked') || v.includes('rejected')) return 'text-rose-600';
+  if (v.includes('waiting')) return 'text-amber-700';
+  return 'text-blue-700';
 }
 
-function Card({ children, className = '' }) {
-  return <div className={`bg-white rounded-2xl shadow-sm border border-slate-200 p-4 ${className}`}>{children}</div>;
+// ------------------------------------------------------------
+// UI atoms
+// ------------------------------------------------------------
+function Card({ children, className = '', pad = 'p-5' }) {
+  return <div className={`bg-white rounded-[22px] border border-slate-200/70 shadow-[0_1px_2px_rgba(15,23,42,0.04)] ${pad} ${className}`}>{children}</div>;
 }
-function Button({ children, onClick, variant = 'primary', className = '', type = 'button', disabled }) {
-  const styles = {
-    primary: 'bg-teal-700 text-white hover:bg-teal-800',
-    ghost: 'bg-white text-teal-700 border border-teal-700 hover:bg-teal-50',
-    danger: 'bg-rose-600 text-white hover:bg-rose-700',
+function Btn({ children, onClick, tone = 'blue', size = 'md', className = '', disabled, type = 'button' }) {
+  const tones = {
+    blue: 'bg-[#1d4ed8] text-white hover:bg-[#1a45bd]',
+    navy: 'bg-[#0b2a66] text-white hover:bg-[#0a2456]',
+    red: 'bg-[#e5342b] text-white hover:bg-[#cc2c24]',
+    white: 'bg-white text-[#0b2a66] hover:bg-slate-50 border border-white/60',
+    ghost: 'bg-slate-100 text-slate-700 hover:bg-slate-200',
+    outline: 'bg-white text-[#1d4ed8] border border-[#1d4ed8]/30 hover:bg-blue-50',
   };
+  const sizes = { sm: 'px-3 py-1.5 text-xs', md: 'px-4 py-2 text-sm', lg: 'px-5 py-2.5 text-sm' };
   return (
     <button type={type} disabled={disabled} onClick={onClick}
-      className={`px-3 py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50 ${styles[variant]} ${className}`}>
+      className={`rounded-full font-bold transition disabled:opacity-50 whitespace-nowrap ${tones[tone]} ${sizes[size]} ${className}`}>
       {children}
     </button>
   );
 }
-function Field({ label, children }) {
+function Pill({ children, className = '' }) {
+  return <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${className}`}>{children}</span>;
+}
+function SectionTitle({ children, action }) {
+  return (
+    <div className="flex items-center justify-between mb-4">
+      <h3 className="font-extrabold text-[15px] text-slate-800">{children}</h3>
+      {action}
+    </div>
+  );
+}
+const inputCls = "w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#1d4ed8] focus:bg-white transition";
+function Field({ label, children, hint }) {
   return (
     <label className="block mb-3">
-      <span className="block text-xs font-semibold text-slate-500 mb-1">{label}</span>
+      <span className="block text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-1.5">{label}</span>
       {children}
+      {hint && <span className="block text-[11px] text-slate-400 mt-1">{hint}</span>}
     </label>
   );
 }
-const inputCls = "w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600";
-
-function Modal({ title, onClose, children, wide }) {
+function Modal({ title, subtitle, onClose, children, wide }) {
   return (
-    <div className="fixed inset-0 bg-black/40 z-40 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[2px] z-50 flex items-end sm:items-center justify-center sm:p-4" onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()}
-        className={`bg-white rounded-t-2xl sm:rounded-2xl w-full ${wide ? 'sm:max-w-2xl' : 'sm:max-w-md'} max-h-[92vh] overflow-y-auto p-5 shadow-xl`}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-bold text-lg text-slate-800">{title}</h3>
+        className={`bg-white rounded-t-[26px] sm:rounded-[26px] w-full ${wide ? 'sm:max-w-2xl' : 'sm:max-w-md'} max-h-[92vh] overflow-y-auto p-5 shadow-2xl`}>
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <h3 className="font-extrabold text-lg text-slate-900">{title}</h3>
+            {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
+          </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-xl leading-none px-2">✕</button>
         </div>
         {children}
@@ -154,16 +188,84 @@ function Modal({ title, onClose, children, wide }) {
     </div>
   );
 }
-function Spinner() {
-  return <div className="flex justify-center py-10"><div className="w-8 h-8 border-4 border-teal-200 border-t-teal-700 rounded-full animate-spin"></div></div>;
+function Spinner({ small }) {
+  return <div className={`flex justify-center ${small ? 'py-4' : 'py-12'}`}>
+    <div className={`${small ? 'w-5 h-5 border-2' : 'w-8 h-8 border-[3px]'} border-blue-100 border-t-[#1d4ed8] rounded-full animate-spin`}></div>
+  </div>;
 }
-function EmptyState({ text }) {
+function Empty({ text }) {
   return <div className="text-center text-slate-400 text-sm py-10">{text}</div>;
 }
+function Ring({ value, total, color = '#e5342b', caption }) {
+  const r = 46, circ = 2 * Math.PI * r;
+  const pct = total > 0 ? Math.min(1, value / total) : (value > 0 ? 1 : 0);
+  return (
+    <div className="relative w-[132px] h-[132px] mx-auto">
+      <svg viewBox="0 0 120 120" className="w-full h-full -rotate-90">
+        <circle cx="60" cy="60" r={r} fill="none" stroke="#eef2f9" strokeWidth="11" />
+        <circle cx="60" cy="60" r={r} fill="none" stroke={color} strokeWidth="11" strokeLinecap="round"
+          strokeDasharray={`${circ * pct} ${circ}`} />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className="text-[34px] font-extrabold text-slate-800 leading-none">{String(value).padStart(2, '0')}</span>
+      </div>
+      {caption && (
+        <div className="absolute -bottom-2 left-1/2 -translate-x-1/2">
+          <span className="bg-[#e5342b] text-white text-[11px] font-bold px-3 py-1 rounded-full whitespace-nowrap shadow">{caption}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+function BarRow({ label, value, max, color }) {
+  const pct = max > 0 ? Math.round((value / max) * 100) : 0;
+  return (
+    <div className="flex items-center gap-3 py-1.5">
+      <div className="w-28 shrink-0 text-[13px] text-slate-700 truncate">{label}</div>
+      <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+        <div className="h-full rounded-full" style={{ width: Math.max(pct, 3) + '%', background: color }}></div>
+      </div>
+      <div className="w-10 text-right text-[13px] font-bold" style={{ color }}>{value}</div>
+    </div>
+  );
+}
+function ActionRow({ title, meta, metaTone = 'text-rose-600', accent = '#e5342b', button, onButton }) {
+  return (
+    <div className="flex items-center gap-3 py-3 pl-3 border-l-[3px] rounded-r-lg" style={{ borderColor: accent }}>
+      <div className="min-w-0 flex-1">
+        <div className="text-[13.5px] font-semibold text-slate-800 truncate">{title}</div>
+        <div className="text-[11.5px] text-slate-400 mt-0.5">
+          <span className={`font-bold ${metaTone}`}>{meta.split('·')[0]}</span>
+          {meta.includes('·') && <span> · {meta.split('·').slice(1).join('·').trim()}</span>}
+        </div>
+      </div>
+      {button && <Btn size="sm" onClick={onButton}>{button}</Btn>}
+    </div>
+  );
+}
+function MiniStat({ icon, value, label, tone = 'text-slate-800' }) {
+  return (
+    <div className="flex-1 text-center px-1">
+      <div className="text-[18px] mb-0.5">{icon}</div>
+      <div className={`text-[19px] font-extrabold leading-none ${tone}`}>{value}</div>
+      <div className="text-[10.5px] text-slate-400 mt-1 leading-tight">{label}</div>
+    </div>
+  );
+}
+function WeekPicker({ value, onChange }) {
+  return (
+    <div className="flex items-center gap-2">
+      <button onClick={() => onChange(addDays(value, -7))} className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold">‹</button>
+      <input type="date" value={value} onChange={(e) => onChange(mondayOf(e.target.value))}
+        className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#1d4ed8]" />
+      <button onClick={() => onChange(addDays(value, 7))} className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold">›</button>
+    </div>
+  );
+}
 
-// ------------------------------------------------------------
-// Login
-// ------------------------------------------------------------
+// ============================================================
+// LOGIN
+// ============================================================
 function LoginScreen({ onLogin }) {
   const [name, setName] = useState('');
   const [pin, setPin] = useState('');
@@ -172,148 +274,401 @@ function LoginScreen({ onLogin }) {
 
   const submit = async (e) => {
     e.preventDefault();
-    setErr('');
-    setLoading(true);
+    setErr(''); setLoading(true);
     const res = await api('login', { name, pin });
     setLoading(false);
     if (res.ok) {
       localStorage.setItem('pt_token', res.token);
       localStorage.setItem('pt_user', JSON.stringify(res.user));
-      onLogin(res.user, res.token);
-    } else {
-      setErr(res.error || 'Login gagal.');
-    }
+      onLogin(res.user);
+    } else setErr(res.error || 'Login gagal.');
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-b from-teal-700 to-teal-900">
+    <div className="min-h-screen flex items-center justify-center p-4 hero">
       <div className="w-full max-w-sm">
-        <div className="text-center mb-6 text-white">
-          <div className="text-4xl mb-2">🌞</div>
-          <h1 className="text-xl font-bold">Weekly Plant Management Tracker</h1>
-          <p className="text-teal-100 text-sm mt-1">Login untuk teruskan</p>
+        <div className="text-center mb-6">
+          <div className="w-14 h-14 rounded-2xl bg-[#e5342b] mx-auto mb-3 flex items-center justify-center text-white text-2xl font-extrabold shadow-lg">P</div>
+          <h1 className="text-xl font-extrabold text-white">PlantOps Tracker</h1>
+          <p className="text-blue-200 text-sm mt-1">Pengurusan mingguan plant &amp; sokongan HQ</p>
         </div>
-        <Card>
+        <Card className="!rounded-[26px]">
           <form onSubmit={submit}>
             <Field label="Nama">
               <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="cth: Iqbal" autoFocus />
             </Field>
             <Field label="PIN">
-              <input className={inputCls} type="password" inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value)} placeholder="****" />
+              <input className={inputCls} type="password" inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value)} placeholder="••••" />
             </Field>
-            {err && <div className="text-rose-600 text-sm mb-3">{err}</div>}
-            <Button type="submit" className="w-full" disabled={loading}>{loading ? 'Sila tunggu...' : 'Log Masuk'}</Button>
+            {err && <div className="text-rose-600 text-sm mb-3 bg-rose-50 rounded-xl px-3 py-2">{err}</div>}
+            <Btn type="submit" tone="navy" size="lg" className="w-full" disabled={loading}>{loading ? 'Sila tunggu…' : 'Log Masuk'}</Btn>
           </form>
         </Card>
-        <p className="text-center text-teal-200 text-xs mt-4">Default admin: Admin / 1234 (tukar selepas login pertama)</p>
+        <p className="text-center text-blue-200/80 text-xs mt-4">Login pertama: Admin / 1234</p>
       </div>
     </div>
   );
 }
 
-// ------------------------------------------------------------
-// Dashboard
-// ------------------------------------------------------------
-function DashboardView({ user, lists }) {
-  const [weekStart, setWeekStart] = useState(mondayOf(toISO(new Date())));
-  const [plantFilter, setPlantFilter] = useState(user.role === 'Supervisor' ? user.plant : 'ALL');
+// ============================================================
+// DASHBOARD — MANAGER
+// ============================================================
+function ManagerDashboard({ user, lists, weekStart, setWeekStart, goTo }) {
   const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [assignRow, setAssignRow] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const res = await api('getDashboard', { weekStart, plantFilter: 'ALL' });
+    if (res.ok) setData(res);
+    setLoading(false);
+  }, [weekStart]);
+  useEffect(() => { load(); }, [load]);
+
+  if (loading || !data) return <Spinner />;
+
+  const t = data.totals;
+  const compliance = t.plants > 0 ? Math.round((t.updatesSubmitted / t.plants) * 100) : 0;
+  const needAttention = [...data.summary].sort((a, b) => b.attentionItems - a.attentionItems).slice(0, 5);
+  const critical = data.summary.filter(s => s.oldestPending > 14).length;
+
+  return (
+    <div className="grid lg:grid-cols-[330px_minmax(0,1fr)] gap-4 items-start">
+      {/* LEFT SUMMARY */}
+      <Card className="lg:sticky lg:top-24">
+        <SectionTitle action={<Btn size="sm" tone="ghost" onClick={load}>Refresh</Btn>}>Ringkasan saya</SectionTitle>
+        <Ring value={t.totalAttentionItems} total={Math.max(t.totalAttentionItems, 10)} caption="Perlu tindakan" />
+        <p className="text-center text-[15px] font-bold text-slate-800 mt-6">{greeting()}, {user.name}</p>
+
+        <div className="mt-5">
+          <div className="flex items-end gap-2">
+            <span className="text-[34px] font-extrabold leading-none text-slate-800">{compliance}%</span>
+            <span className="text-xs text-slate-500 mb-1">Pematuhan update mingguan</span>
+          </div>
+          <div className="grid grid-cols-3 gap-2 mt-4">
+            {[
+              { c: '#059669', v: t.updatesSubmitted, l: 'Dihantar' },
+              { c: '#1d4ed8', v: t.updatesMissing, l: 'Belum hantar' },
+              { c: '#e5342b', v: critical, l: 'Kritikal' },
+            ].map((s) => (
+              <div key={s.l}>
+                <div className="h-1.5 rounded-full mb-2" style={{ background: s.c }}></div>
+                <div className="text-[17px] font-extrabold text-slate-800 leading-none">{s.v}</div>
+                <div className="text-[10.5px] text-slate-400 mt-1">{s.l}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-5 border border-slate-200 rounded-2xl p-3 flex">
+          <MiniStat icon="🏭" value={t.plants} label="Plant dipantau" />
+          <MiniStat icon="🧰" value={t.totalHqPending} label="Tugasan HQ terbuka" />
+          <MiniStat icon="⏱" value={t.oldestPendingOverall} label="Pending terlama (hari)" tone="text-rose-600" />
+        </div>
+      </Card>
+
+      {/* MAIN */}
+      <div className="space-y-4">
+        <div className="hero rounded-[22px] p-5 text-white">
+          <div className="flex items-start justify-between gap-3 mb-4">
+            <div>
+              <h2 className="text-lg font-extrabold">Plant perlu perhatian</h2>
+              <p className="text-blue-200 text-xs mt-0.5">{t.totalAttentionItems} permohonan terbuka daripada {t.plants} plant</p>
+            </div>
+            <Btn tone="white" size="sm" onClick={() => goTo('Attention')}>Lihat semua</Btn>
+          </div>
+          <div className="grid sm:grid-cols-3 gap-3">
+            {needAttention.slice(0, 3).map((s) => (
+              <div key={s.plant} className="bg-white/10 rounded-2xl p-3.5">
+                <div className="text-[26px] font-extrabold leading-none">{s.attentionItems}</div>
+                <div className="text-[12px] text-blue-100 mt-1.5 font-semibold truncate">{s.plant}</div>
+                <div className="text-[11px] text-blue-200/80 mt-0.5">pending terlama {s.oldestPending} hari</div>
+              </div>
+            ))}
+          </div>
+          <div className="text-[11px] text-blue-200/80 mt-3">
+            {t.updatesMissing} plant belum hantar update minggu ini · {t.equipmentPending} permohonan equipment aktif
+          </div>
+        </div>
+
+        <div className="grid lg:grid-cols-2 gap-4">
+          <Card>
+            <SectionTitle action={<Btn size="sm" tone="ghost" onClick={() => goTo('Manpower')}>Manpower</Btn>}>Plant memerlukan perhatian</SectionTitle>
+            {needAttention.map((s) => (
+              <BarRow key={s.plant} label={s.plant} value={s.attentionItems}
+                max={Math.max(...data.summary.map(x => x.attentionItems), 1)}
+                color={s.oldestPending > 14 ? '#e5342b' : s.attentionItems > 2 ? '#b45309' : '#1d4ed8'} />
+            ))}
+          </Card>
+
+          <Card>
+            <SectionTitle action={<Btn size="sm" tone="ghost" onClick={() => goTo('Attention')}>Lihat semua</Btn>}>Perlu tindakan</SectionTitle>
+            {data.actionItems.length === 0 ? <Empty text="Tiada item tertunggak." /> : (
+              <div className="space-y-1">
+                {data.actionItems.slice(0, 4).map((a) => (
+                  <ActionRow key={a.id}
+                    title={`${a.plant} · ${a.item}`}
+                    meta={`${a.unassigned ? 'Belum assign' : (a.hq || 'HQ')} · ${a.pendingDays} hari · ${a.status}`}
+                    metaTone={a.unassigned ? 'text-rose-600' : 'text-amber-700'}
+                    accent={a.unassigned ? '#e5342b' : '#b45309'}
+                    button={a.unassigned ? 'Assign' : 'Buka'}
+                    onButton={() => setAssignRow(a)} />
+                ))}
+              </div>
+            )}
+          </Card>
+        </div>
+
+        <Card>
+          <SectionTitle>Headcount harian ikut plant</SectionTitle>
+          <div className="overflow-x-auto no-bar -mx-1 px-1">
+            <table className="w-full text-sm min-w-[620px]">
+              <thead>
+                <tr className="text-[11px] uppercase tracking-wide text-slate-400">
+                  <th className="text-left font-bold pb-2 pl-1">Plant</th>
+                  {DAY_KEYS.map(d => <th key={d} className="font-bold pb-2 px-1 text-center">{DAY_SHORT[d]}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {data.summary.map((s) => (
+                  <tr key={s.plant} className="border-t border-slate-100">
+                    <td className="py-2.5 pl-1 font-semibold text-slate-700 whitespace-nowrap">{s.plant}</td>
+                    {s.headcount === 'NOT UPDATED'
+                      ? <td colSpan={7} className="text-center py-2.5 text-[12px] text-slate-400 font-semibold">BELUM DIKEMASKINI</td>
+                      : DAY_KEYS.map(d => (
+                        <td key={d} className="text-center py-2.5">
+                          <span className={`inline-block w-7 h-7 leading-7 rounded-lg text-[12.5px] font-bold ${s.headcount[d] < 2 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-700'}`}>
+                            {s.headcount[d]}
+                          </span>
+                        </td>
+                      ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
+
+      {assignRow && <AssignModal id={assignRow.id} lists={lists} onClose={() => setAssignRow(null)} onSaved={() => { setAssignRow(null); load(); }} />}
+    </div>
+  );
+}
+
+// ============================================================
+// DASHBOARD — SUPERVISOR (plant)
+// ============================================================
+function PlantDashboard({ user, lists, weekStart, setWeekStart, goTo }) {
+  const [data, setData] = useState(null);
+  const [attn, setAttn] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await api('getDashboard', { weekStart, plantFilter });
-    if (res.ok) setData(res);
+    const [d, a] = await Promise.all([
+      api('getDashboard', { weekStart }),
+      api('listManagerAttention', { openOnly: false }),
+    ]);
+    if (d.ok) setData(d);
+    if (a.ok) setAttn(a.rows);
     setLoading(false);
-  }, [weekStart, plantFilter]);
-
+  }, [weekStart]);
   useEffect(() => { load(); }, [load]);
 
+  if (loading || !data) return <Spinner />;
+  const s = data.summary[0] || { weeklyUpdate: 'NO', attentionItems: 0, oldestPending: 0, hqPending: 0, headcount: 'NOT UPDATED' };
+  const open = attn.filter(r => !['completed', 'closed'].includes(String(r.Status).toLowerCase()));
+  const done = attn.length - open.length;
+
   return (
-    <div className="space-y-4">
-      <Card>
-        <div className="flex flex-wrap gap-3 items-end">
-          <Field label="Week Start (Isnin)">
-            <input type="date" className={inputCls} value={weekStart} onChange={(e) => setWeekStart(mondayOf(e.target.value))} />
-          </Field>
-          {user.role !== 'Supervisor' && (
-            <Field label="Plant Filter">
-              <select className={inputCls} value={plantFilter} onChange={(e) => setPlantFilter(e.target.value)}>
-                <option value="ALL">ALL</option>
-                {lists.plants.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </Field>
-          )}
-          <Button onClick={load}>Refresh</Button>
+    <div className="grid lg:grid-cols-[330px_minmax(0,1fr)] gap-4 items-start">
+      <Card className="lg:sticky lg:top-24">
+        <SectionTitle action={<Btn size="sm" tone="ghost" onClick={load}>Refresh</Btn>}>Ringkasan saya</SectionTitle>
+        <Ring value={open.length} total={Math.max(attn.length, 5)} caption="Permohonan terbuka" />
+        <p className="text-center text-[15px] font-bold text-slate-800 mt-6">{greeting()}, {user.name}</p>
+        <p className="text-center text-xs text-slate-400 mt-1">{user.plant}</p>
+
+        <div className="mt-5">
+          <div className="flex items-center gap-2.5">
+            <span className={`w-10 h-10 shrink-0 rounded-full flex items-center justify-center text-[18px] font-extrabold ${s.weeklyUpdate === 'YES' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+              {s.weeklyUpdate === 'YES' ? '✓' : '!'}
+            </span>
+            <span className="text-[12.5px] text-slate-500 leading-snug">Update mingguan<br /><b className="text-slate-700">{s.weeklyUpdate === 'YES' ? 'dah dihantar' : 'belum dihantar'}</b></span>
+          </div>
+          <div className="grid grid-cols-3 gap-2 mt-4">
+            {[
+              { c: '#059669', v: done, l: 'Selesai' },
+              { c: '#1d4ed8', v: open.filter(r => r.HQSupportAssigned).length, l: 'Dengan HQ' },
+              { c: '#e5342b', v: open.filter(r => !r.HQSupportAssigned).length, l: 'Belum assign' },
+            ].map((x) => (
+              <div key={x.l}>
+                <div className="h-1.5 rounded-full mb-2" style={{ background: x.c }}></div>
+                <div className="text-[17px] font-extrabold text-slate-800 leading-none">{x.v}</div>
+                <div className="text-[10.5px] text-slate-400 mt-1">{x.l}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-5 border border-slate-200 rounded-2xl p-3 flex">
+          <MiniStat icon="📝" value={s.attentionItems} label="Permohonan terbuka" />
+          <MiniStat icon="🧰" value={s.hqPending} label="Tugasan HQ" />
+          <MiniStat icon="⏱" value={s.oldestPending} label="Pending terlama" tone="text-rose-600" />
         </div>
       </Card>
 
-      {loading && <Spinner />}
-      {!loading && data && (
-        <React.Fragment>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <StatTile label="Updates Submitted" value={data.totals.updatesSubmitted} color="green" />
-            <StatTile label="Attention Items" value={data.totals.totalAttentionItems} color="yellow" />
-            <StatTile label="Oldest Pending (hari)" value={data.totals.oldestPendingOverall} color="red" />
-            <StatTile label="HQ Tasks Pending" value={data.totals.totalHqPending} color="blue" />
+      <div className="space-y-4">
+        {s.weeklyUpdate === 'NO' && (
+          <div className="bg-rose-50 border border-rose-100 rounded-[22px] p-4 flex items-center justify-between gap-3">
+            <div>
+              <div className="font-extrabold text-rose-600 text-[14px]">Update mingguan belum dihantar</div>
+              <div className="text-[12px] text-slate-500 mt-0.5">Minggu {fmtDateShort(weekStart)} – {fmtDateShort(addDays(weekStart, 6))} · isi 3 baris berpandu</div>
+            </div>
+            <Btn tone="red" size="sm" onClick={() => goTo('Update Mingguan')}>Isi sekarang</Btn>
           </div>
+        )}
 
-          <Card>
-            <h3 className="font-bold text-slate-700 mb-3">Cross-Plant Summary</h3>
-            <div className="space-y-2">
-              {data.summary.map((s) => (
-                <div key={s.plant} className="border border-slate-200 rounded-xl p-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-                  <div className="font-bold text-slate-800 w-36">{s.plant}</div>
-                  <div>Update: <Badge color={s.weeklyUpdate === 'YES' ? 'green' : 'red'}>{s.weeklyUpdate}</Badge></div>
-                  <div>Attention: <Badge color={s.attentionItems > 0 ? 'yellow' : 'slate'}>{s.attentionItems}</Badge></div>
-                  <div>Oldest Pending: <Badge color={s.oldestPending > 7 ? 'red' : 'slate'}>{s.oldestPending}d</Badge></div>
-                  <div>HQ Pending: <Badge color={s.hqPending > 0 ? 'blue' : 'slate'}>{s.hqPending}</Badge></div>
-                  <div>Equipment: <Badge color="slate">{s.equipmentAvailable} available</Badge></div>
-                  <div>Headcount terendah: <Badge color={s.lowestHeadcount === 'NOT UPDATED' ? 'slate' : (s.lowestHeadcount < 2 ? 'red' : 'green')}>{s.lowestHeadcount}</Badge></div>
-                </div>
+        <div className="hero rounded-[22px] p-5 text-white">
+          <div className="flex items-start justify-between gap-3 mb-4">
+            <div>
+              <h2 className="text-lg font-extrabold">Minggu ini</h2>
+              <p className="text-blue-200 text-xs mt-0.5">{fmtDate(weekStart)} – {fmtDate(addDays(weekStart, 6))}</p>
+            </div>
+            <Btn tone="white" size="sm" onClick={() => goTo('Permohonan')}>Mohon bantuan</Btn>
+          </div>
+          <div className="space-y-2">
+            <HeroRow label="Update mingguan" sub="Generation · Equipment · Routine O&M"
+              badge={s.weeklyUpdate === 'YES' ? 'Siap' : 'Belum isi'} done={s.weeklyUpdate === 'YES'}
+              onClick={() => goTo('Update Mingguan')} />
+            <HeroRow label="Manpower mingguan" sub="Isnin hingga Ahad · rekod replacement"
+              badge={s.headcount === 'NOT UPDATED' ? 'Belum isi' : 'Siap'} done={s.headcount !== 'NOT UPDATED'}
+              onClick={() => goTo('Manpower')} />
+            <HeroRow label="Permohonan equipment" sub="Semak keberadaan &amp; tarikh tool"
+              badge="Buka" done={false} onClick={() => goTo('Equipment')} />
+          </div>
+        </div>
+
+        <Card>
+          <SectionTitle action={<Btn size="sm" tone="ghost" onClick={() => goTo('Permohonan')}>Lihat semua</Btn>}>Status permohonan saya</SectionTitle>
+          {open.length === 0 ? <Empty text="Tiada permohonan terbuka." /> : (
+            <div className="space-y-1">
+              {open.slice(0, 5).map((r) => (
+                <ActionRow key={r.ID} title={r.AttentionItem}
+                  meta={`${r.Status} · ${r.HQSupportAssigned ? 'HQ: ' + r.HQSupportAssigned : 'Menunggu manager'} · ${r.PendingDays} hari`}
+                  metaTone={statusTone(r.Status)}
+                  accent={r.HQSupportAssigned ? '#1d4ed8' : '#e5342b'}
+                  button="Buka" onButton={() => goTo('Permohonan')} />
               ))}
             </div>
-          </Card>
-        </React.Fragment>
-      )}
+          )}
+        </Card>
+      </div>
     </div>
   );
 }
-function StatTile({ label, value, color }) {
-  const map = { green: 'text-emerald-600', yellow: 'text-amber-600', red: 'text-rose-600', blue: 'text-sky-600' };
+function HeroRow({ label, sub, badge, done, onClick }) {
   return (
-    <Card className="text-center">
-      <div className={`text-3xl font-extrabold ${map[color]}`}>{value}</div>
-      <div className="text-xs text-slate-500 mt-1">{label}</div>
-    </Card>
+    <div className="bg-white/10 hover:bg-white/[0.16] transition rounded-2xl p-3.5 flex items-center justify-between gap-3 cursor-pointer" onClick={onClick}>
+      <div className="min-w-0">
+        <div className="font-bold text-[13.5px] truncate">{label}</div>
+        <div className="text-[11.5px] text-blue-200/85 truncate">{sub}</div>
+      </div>
+      <span className={`shrink-0 px-3 py-1.5 rounded-full text-[11.5px] font-bold ${done ? 'bg-emerald-400/20 text-emerald-100' : 'bg-white text-[#0b2a66]'}`}>{badge}</span>
+    </div>
   );
 }
 
-// ------------------------------------------------------------
-// Supervisor Update
-// ------------------------------------------------------------
+// ============================================================
+// DASHBOARD — HQ
+// ============================================================
+function HqDashboard({ user, lists, goTo }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editRow, setEditRow] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const res = await api('listHqTasks', { mineOnly: true });
+    if (res.ok) setRows(res.rows);
+    setLoading(false);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <Spinner />;
+  const open = rows.filter(r => !['completed', 'closed'].includes(String(r.Status).toLowerCase()));
+  const late = open.filter(r => r.DelayDays > 0);
+
+  return (
+    <div className="grid lg:grid-cols-[330px_minmax(0,1fr)] gap-4 items-start">
+      <Card className="lg:sticky lg:top-24">
+        <SectionTitle action={<Btn size="sm" tone="ghost" onClick={load}>Refresh</Btn>}>Ringkasan saya</SectionTitle>
+        <Ring value={open.length} total={Math.max(rows.length, 5)} caption="Tugasan aktif" />
+        <p className="text-center text-[15px] font-bold text-slate-800 mt-6">{greeting()}, {user.name}</p>
+        <p className="text-center text-xs text-slate-400 mt-1">HQ Support Team</p>
+        <div className="mt-5 border border-slate-200 rounded-2xl p-3 flex">
+          <MiniStat icon="🧰" value={rows.length} label="Jumlah tugasan" />
+          <MiniStat icon="⚠️" value={late.length} label="Lewat ETA" tone="text-rose-600" />
+          <MiniStat icon="✅" value={rows.length - open.length} label="Selesai" tone="text-emerald-600" />
+        </div>
+      </Card>
+
+      <div className="space-y-4">
+        <div className="hero rounded-[22px] p-5 text-white">
+          <h2 className="text-lg font-extrabold">Tugasan saya</h2>
+          <p className="text-blue-200 text-xs mt-0.5 mb-4">{open.length} tugasan aktif · {late.length} lewat ETA</p>
+          <div className="space-y-2">
+            {open.slice(0, 4).map((r) => (
+              <div key={r.ID} className="bg-white/10 rounded-2xl p-3.5 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-bold text-[13.5px] truncate">{r.PlantScope} · {r.TaskAction}</div>
+                  <div className="text-[11.5px] text-blue-200/85">ETA {fmtDateShort(r.ExpectedCompletion)} · {r.PendingDays} hari{r.DelayDays > 0 ? ` · lewat ${r.DelayDays}h` : ''}</div>
+                </div>
+                <Btn tone="white" size="sm" onClick={() => setEditRow(r)}>Update</Btn>
+              </div>
+            ))}
+            {open.length === 0 && <div className="text-blue-200/80 text-sm py-4 text-center">Tiada tugasan aktif.</div>}
+          </div>
+        </div>
+
+        <Card>
+          <SectionTitle>Semua tugasan</SectionTitle>
+          {rows.length === 0 ? <Empty text="Tiada rekod." /> : (
+            <div className="divide-y divide-slate-100">
+              {rows.map((r) => <TaskRow key={r.ID} r={r} onClick={() => setEditRow(r)} />)}
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {editRow && <HqTaskModal row={editRow} lists={lists} onClose={() => setEditRow(null)} onSaved={() => { setEditRow(null); load(); }} />}
+    </div>
+  );
+}
+
+// ============================================================
+// WEEKLY UPDATE
+// ============================================================
 const ROW_LABELS = [
-  { n: 1, title: 'Generation / Key Pending Issue' },
-  { n: 2, title: 'Equipment / Routine O&M or CBM' },
-  { n: 3, title: 'Routine O&M Result / Training or Improvement' },
+  { n: 1, title: 'Generation / Key Pending Issue', hint: 'Target generation & availability normal? Kalau tak, apa sebab utama?' },
+  { n: 2, title: 'Equipment / Routine O&M atau CBM', hint: 'Ada isu equipment atau site? Nyatakan tindakan yang dah selesai.' },
+  { n: 3, title: 'Routine O&M Result / Training atau Improvement', hint: 'Target routine O&M tercapai? Kalau tak, apa yang tinggal?' },
 ];
-function SupervisorUpdateView({ user, lists }) {
-  const [weekStart, setWeekStart] = useState(mondayOf(toISO(new Date())));
-  const [plant, setPlant] = useState(user.role === 'Supervisor' ? user.plant : (lists.plants[0] || ''));
+function WeeklyUpdateView({ user, lists, weekStart, setWeekStart }) {
+  const isPlant = user.role === 'Supervisor';
+  const [plant, setPlant] = useState(isPlant ? user.plant : (lists.plants[0] || ''));
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
-  const canEdit = user.role !== 'HQ';
 
   const load = useCallback(async () => {
-    if (!plant) return;
     setLoading(true);
     const res = await api('getSupervisorUpdate', { weekStart, plant });
     if (res.ok) {
       const byType = {};
-      res.rows.forEach((r) => byType[r.RowType] = r);
-      setRows([1, 2, 3].map((n) => ({
+      res.rows.forEach(r => byType[r.RowType] = r);
+      setRows([1, 2, 3].map(n => ({
         rowType: n,
         lastWeekOutcome: byType[n]?.LastWeekOutcome || '',
         thisWeekPriority: byType[n]?.ThisWeekPriority || '',
@@ -322,153 +677,192 @@ function SupervisorUpdateView({ user, lists }) {
     }
     setLoading(false);
   }, [weekStart, plant]);
-
   useEffect(() => { load(); }, [load]);
 
-  const updateRow = (idx, field, val) => {
-    setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, [field]: val } : r)));
-  };
-
+  const upd = (i, f, v) => setRows(p => p.map((r, x) => x === i ? { ...r, [f]: v } : r));
   const save = async () => {
-    setSaving(true);
-    setMsg('');
-    const res = await api('saveSupervisorUpdate', {
-      weekStart, weekEnd: addDays(weekStart, 6), plant, supervisor: user.name, rows,
-    });
+    setSaving(true); setMsg('');
+    const res = await api('saveSupervisorUpdate', { weekStart, weekEnd: addDays(weekStart, 6), plant, supervisor: user.name, rows });
     setSaving(false);
-    setMsg(res.ok ? 'Berjaya disimpan.' : (res.error || 'Gagal simpan.'));
+    setMsg(res.ok ? '✓ Berjaya disimpan' : (res.error || 'Gagal simpan'));
+    setTimeout(() => setMsg(''), 4000);
   };
 
   return (
-    <div className="space-y-4">
+    <div className="max-w-3xl mx-auto space-y-4">
       <Card>
-        <div className="flex flex-wrap gap-3 items-end">
-          <Field label="Week Start (Isnin)">
-            <input type="date" className={inputCls} value={weekStart} onChange={(e) => setWeekStart(mondayOf(e.target.value))} />
-          </Field>
-          {user.role !== 'Supervisor' && (
-            <Field label="Plant">
-              <select className={inputCls} value={plant} onChange={(e) => setPlant(e.target.value)}>
-                {lists.plants.map((p) => <option key={p} value={p}>{p}</option>)}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-extrabold text-slate-800">Update mingguan</h2>
+            <p className="text-xs text-slate-500 mt-0.5">{plant} · {fmtDate(weekStart)} – {fmtDate(addDays(weekStart, 6))}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {!isPlant && (
+              <select className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm" value={plant} onChange={(e) => setPlant(e.target.value)}>
+                {lists.plants.map(p => <option key={p}>{p}</option>)}
               </select>
-            </Field>
-          )}
+            )}
+            <WeekPicker value={weekStart} onChange={setWeekStart} />
+          </div>
         </div>
-        <p className="text-xs text-slate-500 mt-1">Tulis result + reason / action ringkas, bukan sekadar "Done" / "Pending". Kalau tak berkenaan, tulis N/A.</p>
+        <p className="text-[12px] text-slate-500 mt-3 bg-blue-50/60 rounded-xl px-3 py-2">
+          Tulis result + sebab / tindakan, bukan setakat "Done" atau "Pending". Kalau tak berkenaan, tulis N/A.
+        </p>
       </Card>
 
       {loading ? <Spinner /> : (
-        <div className="space-y-4">
-          {rows.map((r, idx) => (
+        <React.Fragment>
+          {rows.map((r, i) => (
             <Card key={r.rowType}>
-              <h3 className="font-bold text-slate-700 mb-3">Row {r.rowType} — {ROW_LABELS[idx].title}</h3>
-              <Field label="LAST WEEK OUTCOME">
-                <textarea className={inputCls} rows={2} disabled={!canEdit} value={r.lastWeekOutcome} onChange={(e) => updateRow(idx, 'lastWeekOutcome', e.target.value)} />
+              <div className="flex items-center gap-2 mb-3">
+                <span className="w-7 h-7 rounded-full bg-[#0b2a66] text-white text-[12px] font-extrabold flex items-center justify-center">{r.rowType}</span>
+                <h3 className="font-extrabold text-[14px] text-slate-800">{ROW_LABELS[i].title}</h3>
+              </div>
+              <p className="text-[11.5px] text-slate-400 mb-3">{ROW_LABELS[i].hint}</p>
+              <Field label="Outcome minggu lepas">
+                <textarea className={inputCls} rows={2} value={r.lastWeekOutcome} onChange={(e) => upd(i, 'lastWeekOutcome', e.target.value)} />
               </Field>
-              <Field label="THIS WEEK PRIORITY">
-                <textarea className={inputCls} rows={2} disabled={!canEdit} value={r.thisWeekPriority} onChange={(e) => updateRow(idx, 'thisWeekPriority', e.target.value)} />
+              <Field label="Priority minggu ini">
+                <textarea className={inputCls} rows={2} value={r.thisWeekPriority} onChange={(e) => upd(i, 'thisWeekPriority', e.target.value)} />
               </Field>
               <Field label="Remarks">
-                <input className={inputCls} disabled={!canEdit} value={r.remarks} onChange={(e) => updateRow(idx, 'remarks', e.target.value)} />
+                <input className={inputCls} value={r.remarks} onChange={(e) => upd(i, 'remarks', e.target.value)} />
               </Field>
             </Card>
           ))}
-          {canEdit && (
-            <div className="flex items-center gap-3">
-              <Button onClick={save} disabled={saving}>{saving ? 'Menyimpan...' : 'Simpan Update'}</Button>
-              {msg && <span className="text-sm text-slate-600">{msg}</span>}
-            </div>
-          )}
-        </div>
+          <div className="flex items-center gap-3 pb-4">
+            <Btn size="lg" onClick={save} disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan update'}</Btn>
+            {msg && <span className="text-sm font-semibold text-emerald-600">{msg}</span>}
+          </div>
+        </React.Fragment>
       )}
     </div>
   );
 }
 
-// ------------------------------------------------------------
-// Manager Attention
-// ------------------------------------------------------------
-function ManagerAttentionView({ user, lists }) {
-  const [plantFilter, setPlantFilter] = useState('ALL');
-  const [openOnly, setOpenOnly] = useState(true);
+// ============================================================
+// ATTENTION / PERMOHONAN
+// ============================================================
+function AttentionView({ user, lists, goTo }) {
+  const isPlant = user.role === 'Supervisor';
+  const canAssign = user.role === 'Manager' || user.role === 'Admin';
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [plantFilter, setPlantFilter] = useState('ALL');
+  const [filter, setFilter] = useState('open');
   const [showAdd, setShowAdd] = useState(false);
-  const [editRow, setEditRow] = useState(null);
-  const canManage = user.role === 'Manager' || user.role === 'Admin';
+  const [assignId, setAssignId] = useState(null);
+  const [detail, setDetail] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await api('listManagerAttention', { plantFilter, openOnly });
+    const res = await api('listManagerAttention', { plantFilter, openOnly: false });
     if (res.ok) setRows(res.rows);
     setLoading(false);
-  }, [plantFilter, openOnly]);
-
+  }, [plantFilter]);
   useEffect(() => { load(); }, [load]);
 
+  const shown = rows.filter(r => {
+    const closed = ['completed', 'closed'].includes(String(r.Status).toLowerCase());
+    if (filter === 'open') return !closed;
+    if (filter === 'unassigned') return !closed && r.Unassigned;
+    if (filter === 'done') return closed;
+    return true;
+  });
+
   return (
-    <div className="space-y-4">
+    <div className="max-w-5xl mx-auto space-y-4">
       <Card>
-        <div className="flex flex-wrap gap-3 items-end justify-between">
-          <div className="flex flex-wrap gap-3 items-end">
-            {user.role !== 'Supervisor' && (
-              <Field label="Plant">
-                <select className={inputCls} value={plantFilter} onChange={(e) => setPlantFilter(e.target.value)}>
-                  <option value="ALL">ALL</option>
-                  {lists.plants.map((p) => <option key={p} value={p}>{p}</option>)}
-                </select>
-              </Field>
-            )}
-            <label className="flex items-center gap-2 text-sm mb-3">
-              <input type="checkbox" checked={openOnly} onChange={(e) => setOpenOnly(e.target.checked)} />
-              Open sahaja
-            </label>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-extrabold text-slate-800">{isPlant ? 'Permohonan saya' : 'Permohonan plant'}</h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {isPlant ? 'Request daripada plant kepada manager' : 'Request masuk daripada plant · assign HQ support di sini'}
+            </p>
           </div>
-          {canManage && <Button onClick={() => setShowAdd(true)}>+ Tambah Item</Button>}
+          <div className="flex items-center gap-2">
+            {!isPlant && (
+              <select className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm" value={plantFilter} onChange={(e) => setPlantFilter(e.target.value)}>
+                <option value="ALL">Semua plant</option>
+                {lists.plants.map(p => <option key={p}>{p}</option>)}
+              </select>
+            )}
+            <Btn onClick={() => setShowAdd(true)}>+ Permohonan</Btn>
+          </div>
+        </div>
+        <div className="flex gap-2 mt-4 overflow-x-auto no-bar">
+          {[['open', 'Terbuka'], ['unassigned', 'Belum assign'], ['done', 'Selesai'], ['all', 'Semua']].map(([k, l]) => (
+            <button key={k} onClick={() => setFilter(k)}
+              className={`px-3.5 py-1.5 rounded-full text-[12.5px] font-bold whitespace-nowrap transition ${filter === k ? 'bg-[#0b2a66] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+              {l}
+            </button>
+          ))}
         </div>
       </Card>
 
-      {loading ? <Spinner /> : rows.length === 0 ? <EmptyState text="Tiada item." /> : (
-        <div className="space-y-2">
-          {rows.map((r) => (
-            <Card key={r.ID} className={canManage ? 'cursor-pointer hover:border-teal-400' : ''}>
-              <div onClick={() => canManage && setEditRow(r)}>
-                <div className="flex justify-between items-start gap-2">
-                  <div className="font-bold text-slate-800">{r.Plant}</div>
-                  <div className="flex gap-1">
-                    <Badge color={priorityColor(r.Priority)}>{r.Priority}</Badge>
-                    <Badge color={statusColor(r.Status)}>{r.Status}</Badge>
+      {loading ? <Spinner /> : shown.length === 0 ? <Card><Empty text="Tiada permohonan." /></Card> : (
+        <div className="space-y-3">
+          {shown.map((r) => {
+            const tone = priorityTone(r.Priority);
+            return (
+              <Card key={r.ID} pad="p-4" className="hover:border-blue-300 transition cursor-pointer" >
+                <div onClick={() => setDetail(r)}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono text-[11px] font-bold text-slate-400">{r.ID}</span>
+                        <Pill className={`${tone.bg} ${tone.text}`}>{tone.label}</Pill>
+                        <Pill className={`bg-slate-100 ${statusTone(r.Status)}`}>{r.Status}</Pill>
+                      </div>
+                      <div className="font-bold text-slate-800 text-[14.5px] mt-1.5">{r.Plant}</div>
+                      <div className="text-[13px] text-slate-600 mt-0.5">{r.AttentionItem}</div>
+                    </div>
+                    {canAssign && (
+                      <Btn size="sm" tone={r.Unassigned ? 'blue' : 'outline'} onClick={(e) => { e.stopPropagation(); setAssignId(r.ID); }}>
+                        {r.Unassigned ? 'Assign HQ' : 'Urus'}
+                      </Btn>
+                    )}
                   </div>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-slate-400 mt-3 pt-3 border-t border-slate-100">
+                    <span>Dimohon {fmtDate(r.DateRaised)}</span>
+                    <span>Oleh {r.RaisedBy || '-'}</span>
+                    <span className={r.PendingDays > 14 ? 'text-rose-600 font-bold' : ''}>Pending {r.PendingDays} hari</span>
+                    {r.HQSupportAssigned && <span className="text-blue-700 font-semibold">HQ: {r.HQSupportAssigned}</span>}
+                    {r.HQExpectedCompletion && <span>ETA {fmtDate(r.HQExpectedCompletion)}</span>}
+                  </div>
+                  {r.LatestHQUpdate && (
+                    <div className="mt-2 bg-blue-50/70 rounded-xl px-3 py-2 text-[12px] text-slate-600">
+                      <span className="font-bold text-blue-700">Update HQ:</span> {r.LatestHQUpdate}
+                      {r.HQCompletionDate && <span className="text-emerald-600 font-semibold"> · selesai {fmtDate(r.HQCompletionDate)}</span>}
+                    </div>
+                  )}
                 </div>
-                <div className="text-sm mt-1">{r.AttentionItem}</div>
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 mt-2">
-                  <span>Raised: {fmtDate(r.DateRaised)}</span>
-                  <span>Pending: <b className={r.PendingDays > 14 ? 'text-rose-600' : ''}>{r.PendingDays}d</b></span>
-                  {r.HQSupportAssigned && <span>HQ: {r.HQSupportAssigned}</span>}
-                  {r.LatestHQUpdate && <span>Update terkini: {r.LatestHQUpdate}</span>}
-                </div>
-              </div>
-            </Card>
-          ))}
+              </Card>
+            );
+          })}
         </div>
       )}
 
-      {showAdd && (
-        <AddAttentionModal lists={lists} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />
-      )}
-      {editRow && (
-        <EditAttentionModal row={editRow} lists={lists} onClose={() => setEditRow(null)} onSaved={() => { setEditRow(null); load(); }} />
-      )}
+      {showAdd && <AddAttentionModal user={user} lists={lists} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />}
+      {assignId && <AssignModal id={assignId} lists={lists} onClose={() => setAssignId(null)} onSaved={() => { setAssignId(null); load(); }} />}
+      {detail && <AttentionDetailModal row={detail} onClose={() => setDetail(null)} />}
     </div>
   );
 }
 
-function AddAttentionModal({ lists, onClose, onSaved }) {
-  const [plant, setPlant] = useState(lists.plants[0] || '');
+function AddAttentionModal({ user, lists, onClose, onSaved }) {
+  const isPlant = user.role === 'Supervisor';
+  const [plant, setPlant] = useState(isPlant ? user.plant : (lists.plants[0] || ''));
   const [dateRaised, setDateRaised] = useState(toISO(new Date()));
   const [item, setItem] = useState('');
-  const [priority, setPriority] = useState(lists.priorities[0] || 'Medium');
+  const [priority, setPriority] = useState('Medium');
   const [saving, setSaving] = useState(false);
+
+  const previewId = useMemo(() => {
+    const slug = String(plant).replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    const d = new Date(dateRaised + 'T00:00:00');
+    return `${slug}_${String(d.getDate()).padStart(2, '0')}${String(d.getMonth() + 1).padStart(2, '0')}${d.getFullYear()}`;
+  }, [plant, dateRaised]);
 
   const save = async () => {
     setSaving(true);
@@ -478,375 +872,614 @@ function AddAttentionModal({ lists, onClose, onSaved }) {
   };
 
   return (
-    <Modal title="Tambah Attention Item" onClose={onClose}>
-      <Field label="Plant"><select className={inputCls} value={plant} onChange={(e) => setPlant(e.target.value)}>{lists.plants.map((p) => <option key={p}>{p}</option>)}</select></Field>
-      <Field label="Date Raised"><input type="date" className={inputCls} value={dateRaised} onChange={(e) => setDateRaised(e.target.value)} /></Field>
-      <Field label="Attention Item / Request"><textarea className={inputCls} rows={3} value={item} onChange={(e) => setItem(e.target.value)} /></Field>
-      <Field label="Priority"><select className={inputCls} value={priority} onChange={(e) => setPriority(e.target.value)}>{lists.priorities.map((p) => <option key={p}>{p}</option>)}</select></Field>
-      <Button className="w-full" onClick={save} disabled={saving || !item}>{saving ? 'Menyimpan...' : 'Simpan'}</Button>
+    <Modal title="Permohonan baru" subtitle="Hanya item yang perlukan keputusan manager / sokongan HQ" onClose={onClose}>
+      {!isPlant && (
+        <Field label="Plant">
+          <select className={inputCls} value={plant} onChange={(e) => setPlant(e.target.value)}>{lists.plants.map(p => <option key={p}>{p}</option>)}</select>
+        </Field>
+      )}
+      <Field label="Tarikh dimohon"><input type="date" className={inputCls} value={dateRaised} onChange={(e) => setDateRaised(e.target.value)} /></Field>
+      <Field label="Perkara / Permohonan">
+        <textarea className={inputCls} rows={3} value={item} onChange={(e) => setItem(e.target.value)} placeholder="cth: Inverter 3 trip berulang, perlu sokongan HQ untuk analisis" />
+      </Field>
+      <Field label="Priority">
+        <select className={inputCls} value={priority} onChange={(e) => setPriority(e.target.value)}>{lists.priorities.map(p => <option key={p}>{p}</option>)}</select>
+      </Field>
+      <div className="bg-slate-50 rounded-xl px-3 py-2.5 mb-4 text-[12px] text-slate-500">
+        ID akan dijana: <span className="font-mono font-bold text-slate-700">{previewId}</span>
+      </div>
+      <Btn size="lg" className="w-full" onClick={save} disabled={saving || !item}>{saving ? 'Menghantar…' : 'Hantar permohonan'}</Btn>
     </Modal>
   );
 }
 
-function EditAttentionModal({ row, lists, onClose, onSaved }) {
-  const [status, setStatus] = useState(row.Status);
-  const [hq, setHq] = useState(row.HQSupportAssigned || '');
-  const [hqDate, setHqDate] = useState(row.HQAssignedDate ? toISO(row.HQAssignedDate) : '');
-  const [hqExpected, setHqExpected] = useState(row.HQExpectedCompletion ? toISO(row.HQExpectedCompletion) : '');
-  const [remarks, setRemarks] = useState(row.ManagerRemarks || '');
-  const [createTask, setCreateTask] = useState(!row.HQSupportAssigned);
+function AssignModal({ id, lists, onClose, onSaved }) {
+  const [row, setRow] = useState(null);
+  const [hq, setHq] = useState('');
+  const [assignedDate, setAssignedDate] = useState(toISO(new Date()));
+  const [expected, setExpected] = useState('');
+  const [status, setStatus] = useState('Assigned to HQ');
+  const [remarks, setRemarks] = useState('');
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const res = await api('listManagerAttention', { openOnly: false });
+      if (res.ok) {
+        const r = res.rows.find(x => String(x.ID) === String(id));
+        if (r) {
+          setRow(r);
+          setHq(r.HQSupportAssigned || '');
+          setAssignedDate(r.HQAssignedDate ? toISO(r.HQAssignedDate) : toISO(new Date()));
+          setExpected(r.HQExpectedCompletion ? toISO(r.HQExpectedCompletion) : '');
+          setStatus(r.Status || 'Assigned to HQ');
+          setRemarks(r.ManagerRemarks || '');
+        }
+      }
+    })();
+  }, [id]);
 
   const save = async () => {
     setSaving(true);
-    const hqChanged = hq && hq !== row.HQSupportAssigned;
-    if (hqChanged && createTask) {
-      await api('addHqTask', {
-        taskAction: row.AttentionItem, plantScope: row.Plant, priority: row.Priority,
-        hqAssigned: hq, assignedDate: hqDate || toISO(new Date()), expectedCompletion: hqExpected,
-        status: 'Assigned to HQ', linkedAttentionId: row.ID,
-      });
-    }
-    const res = await api('updateManagerAttention', {
-      id: row.ID,
-      fields: { Status: status, HQSupportAssigned: hq, HQAssignedDate: hqDate, HQExpectedCompletion: hqExpected, ManagerRemarks: remarks },
+    const res = await api('assignAttention', {
+      id, hqAssigned: hq, hqAssignedDate: assignedDate, hqExpectedCompletion: expected, status, managerRemarks: remarks,
     });
     setSaving(false);
     if (res.ok) onSaved(); else alert(res.error || 'Gagal simpan.');
   };
 
+  if (!row) return <Modal title="Memuatkan…" onClose={onClose}><Spinner small /></Modal>;
+
   return (
-    <Modal title={`Urus Item — ${row.Plant}`} onClose={onClose} wide>
-      <p className="text-sm bg-slate-50 border border-slate-200 rounded-lg p-3 mb-3">{row.AttentionItem}</p>
-      <div className="grid sm:grid-cols-2 gap-x-4">
-        <Field label="Status"><select className={inputCls} value={status} onChange={(e) => setStatus(e.target.value)}>{lists.attentionStatuses.map((s) => <option key={s}>{s}</option>)}</select></Field>
-        <Field label="HQ Support Assigned"><select className={inputCls} value={hq} onChange={(e) => setHq(e.target.value)}><option value="">-</option>{lists.hqMembers.map((m) => <option key={m}>{m}</option>)}</select></Field>
-        <Field label="HQ Assigned Date"><input type="date" className={inputCls} value={hqDate} onChange={(e) => setHqDate(e.target.value)} /></Field>
-        <Field label="HQ Expected Completion"><input type="date" className={inputCls} value={hqExpected} onChange={(e) => setHqExpected(e.target.value)} /></Field>
+    <Modal title="Assign sokongan HQ" subtitle={`${row.ID} · ${row.Plant}`} onClose={onClose} wide>
+      <div className="bg-slate-50 rounded-xl p-3 mb-4 text-[13px] text-slate-700">{row.AttentionItem}</div>
+      <div className="grid sm:grid-cols-2 sm:gap-x-4">
+        <Field label="HQ support assigned">
+          <select className={inputCls} value={hq} onChange={(e) => setHq(e.target.value)}>
+            <option value="">— Belum assign —</option>
+            {lists.hqMembers.map(m => <option key={m}>{m}</option>)}
+          </select>
+        </Field>
+        <Field label="Status">
+          <select className={inputCls} value={status} onChange={(e) => setStatus(e.target.value)}>
+            {lists.attentionStatuses.map(s => <option key={s}>{s}</option>)}
+          </select>
+        </Field>
+        <Field label="Tarikh assign"><input type="date" className={inputCls} value={assignedDate} onChange={(e) => setAssignedDate(e.target.value)} /></Field>
+        <Field label="Jangkaan siap (ETA)"><input type="date" className={inputCls} value={expected} onChange={(e) => setExpected(e.target.value)} /></Field>
       </div>
-      {hq && hq !== row.HQSupportAssigned && (
-        <label className="flex items-center gap-2 text-sm mb-3">
-          <input type="checkbox" checked={createTask} onChange={(e) => setCreateTask(e.target.checked)} />
-          Cipta rekod dalam HQ Team Tasks untuk {hq}
-        </label>
+      <Field label="Manager remarks"><textarea className={inputCls} rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} /></Field>
+      {hq && (
+        <p className="text-[12px] text-blue-700 bg-blue-50 rounded-xl px-3 py-2 mb-4">
+          Tugasan HQ untuk <b>{hq}</b> akan dibuat / dikemaskini automatik dan dilink dengan permohonan ni.
+        </p>
       )}
-      <Field label="Manager Remarks"><textarea className={inputCls} rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} /></Field>
-      {row.LatestHQUpdate && <p className="text-xs text-slate-500 mb-2">Latest HQ update: {row.LatestHQUpdate} {row.HQCompletionDate ? `(selesai ${fmtDate(row.HQCompletionDate)})` : ''}</p>}
-      <Button className="w-full" onClick={save} disabled={saving}>{saving ? 'Menyimpan...' : 'Simpan'}</Button>
+      <Btn size="lg" className="w-full" onClick={save} disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan penugasan'}</Btn>
     </Modal>
   );
 }
 
-// ------------------------------------------------------------
-// HQ Tasks
-// ------------------------------------------------------------
+function AttentionDetailModal({ row, onClose }) {
+  const steps = [
+    { label: 'Dimohon oleh plant', date: row.DateRaised, done: true, by: row.RaisedBy },
+    { label: 'Assign sokongan HQ', date: row.HQAssignedDate, done: !!row.HQSupportAssigned, by: row.HQSupportAssigned },
+    { label: 'Dalam tindakan HQ', date: row.HQExpectedCompletion, done: !!row.LatestHQUpdate, by: row.LatestHQUpdate ? 'Update: ' + row.LatestHQUpdate : 'Menunggu update' },
+    { label: 'Selesai', date: row.HQCompletionDate, done: !!row.HQCompletionDate, by: row.HQCompletionDate ? 'Ditutup' : '—' },
+  ];
+  return (
+    <Modal title={row.Plant} subtitle={`${row.ID} · ${row.Status}`} onClose={onClose} wide>
+      <div className="bg-slate-50 rounded-xl p-3 mb-5 text-[13px] text-slate-700">{row.AttentionItem}</div>
+      <div className="space-y-0">
+        {steps.map((s, i) => (
+          <div key={i} className="flex gap-3">
+            <div className="flex flex-col items-center">
+              <div className={`w-3 h-3 rounded-full mt-1.5 ${s.done ? 'bg-[#1d4ed8]' : 'bg-slate-300'}`}></div>
+              {i < steps.length - 1 && <div className={`w-[2px] flex-1 min-h-[38px] ${s.done ? 'bg-blue-200' : 'bg-slate-200'}`}></div>}
+            </div>
+            <div className="pb-4 min-w-0">
+              <div className={`text-[13.5px] font-bold ${s.done ? 'text-slate-800' : 'text-slate-400'}`}>{s.label}</div>
+              <div className="text-[11.5px] text-slate-400 mt-0.5">{s.date ? fmtDate(s.date) : 'Belum'} {s.by ? '· ' + s.by : ''}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+      {row.ManagerRemarks && (
+        <div className="mt-3 bg-amber-50 rounded-xl px-3 py-2 text-[12.5px] text-slate-700">
+          <span className="font-bold text-amber-700">Manager remarks:</span> {row.ManagerRemarks}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// ============================================================
+// HQ TASKS (manager view)
+// ============================================================
+function TaskRow({ r, onClick }) {
+  const tone = priorityTone(r.Priority);
+  return (
+    <div className="py-3 flex items-start justify-between gap-3 cursor-pointer hover:bg-slate-50/70 -mx-2 px-2 rounded-xl" onClick={onClick}>
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-semibold text-[13.5px] text-slate-800">{r.PlantScope}</span>
+          <Pill className={`${tone.bg} ${tone.text}`}>{tone.label}</Pill>
+          <Pill className={`bg-slate-100 ${statusTone(r.Status)}`}>{r.Status}</Pill>
+          {r.DelayDays > 0 && <Pill className="bg-rose-50 text-rose-600">Lewat {r.DelayDays}h</Pill>}
+        </div>
+        <div className="text-[13px] text-slate-600 mt-1">{r.TaskAction}</div>
+        <div className="text-[11.5px] text-slate-400 mt-1">
+          {r.HQAssigned} · assign {fmtDateShort(r.AssignedDate)} · ETA {fmtDateShort(r.ExpectedCompletion)} · {r.PendingDays} hari
+          {r.LinkedAttentionID ? ` · dari ${r.LinkedAttentionID}` : ''}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function HqTasksView({ user, lists }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [plantFilter, setPlantFilter] = useState('ALL');
-  const [showAdd, setShowAdd] = useState(false);
+  const [mineOnly, setMineOnly] = useState(user.role === 'HQ');
   const [editRow, setEditRow] = useState(null);
-  const canManage = user.role === 'Manager' || user.role === 'Admin';
+  const [showAdd, setShowAdd] = useState(false);
+  const canAdd = user.role === 'Manager' || user.role === 'Admin';
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await api('listHqTasks', { plantFilter, mineOnly: user.role === 'HQ' });
+    const res = await api('listHqTasks', { plantFilter, mineOnly });
     if (res.ok) setRows(res.rows);
     setLoading(false);
-  }, [plantFilter, user.role]);
-
+  }, [plantFilter, mineOnly]);
   useEffect(() => { load(); }, [load]);
 
   return (
-    <div className="space-y-4">
+    <div className="max-w-5xl mx-auto space-y-4">
       <Card>
-        <div className="flex flex-wrap gap-3 items-end justify-between">
-          {canManage && (
-            <Field label="Plant">
-              <select className={inputCls} value={plantFilter} onChange={(e) => setPlantFilter(e.target.value)}>
-                <option value="ALL">ALL</option>
-                {lists.plants.map((p) => <option key={p} value={p}>{p}</option>)}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-extrabold text-slate-800">Tugasan HQ team</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Orang HQ yang di-assign manager untuk turun / selesaikan isu plant</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {user.role !== 'Supervisor' && (
+              <select className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm" value={plantFilter} onChange={(e) => setPlantFilter(e.target.value)}>
+                <option value="ALL">Semua plant</option>
+                {lists.plants.map(p => <option key={p}>{p}</option>)}
               </select>
-            </Field>
-          )}
-          {canManage && <Button onClick={() => setShowAdd(true)}>+ Tambah Tugasan</Button>}
+            )}
+            {user.role === 'HQ' && (
+              <button onClick={() => setMineOnly(!mineOnly)}
+                className={`px-3.5 py-2 rounded-full text-[12.5px] font-bold ${mineOnly ? 'bg-[#0b2a66] text-white' : 'bg-slate-100 text-slate-600'}`}>
+                {mineOnly ? 'Tugasan saya' : 'Semua tugasan'}
+              </button>
+            )}
+            {canAdd && <Btn onClick={() => setShowAdd(true)}>+ Tugasan</Btn>}
+          </div>
         </div>
       </Card>
 
-      {loading ? <Spinner /> : rows.length === 0 ? <EmptyState text="Tiada tugasan." /> : (
-        <div className="space-y-2">
-          {rows.map((r) => (
-            <Card key={r.ID} className="cursor-pointer hover:border-teal-400" >
-              <div onClick={() => setEditRow(r)}>
-                <div className="flex justify-between items-start gap-2">
-                  <div className="font-bold text-slate-800">{r.PlantScope} — {r.HQAssigned}</div>
-                  <div className="flex gap-1">
-                    <Badge color={priorityColor(r.Priority)}>{r.Priority}</Badge>
-                    <Badge color={statusColor(r.Status)}>{r.Status}</Badge>
-                  </div>
-                </div>
-                <div className="text-sm mt-1">{r.TaskAction}</div>
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 mt-2">
-                  <span>Assigned: {fmtDate(r.AssignedDate)}</span>
-                  <span>ETA: {fmtDate(r.ExpectedCompletion)}</span>
-                  <span>Pending: {r.PendingDays}d</span>
-                  {r.DelayDays > 0 && <Badge color="red">Lewat {r.DelayDays}d</Badge>}
-                </div>
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
+      <Card>
+        {loading ? <Spinner /> : rows.length === 0 ? <Empty text="Tiada tugasan." /> : (
+          <div className="divide-y divide-slate-100">
+            {rows.map(r => <TaskRow key={r.ID} r={r} onClick={() => setEditRow(r)} />)}
+          </div>
+        )}
+      </Card>
 
       {showAdd && <AddHqTaskModal lists={lists} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />}
-      {editRow && <EditHqTaskModal row={editRow} lists={lists} onClose={() => setEditRow(null)} onSaved={() => { setEditRow(null); load(); }} />}
+      {editRow && <HqTaskModal row={editRow} lists={lists} onClose={() => setEditRow(null)} onSaved={() => { setEditRow(null); load(); }} />}
     </div>
   );
 }
 
 function AddHqTaskModal({ lists, onClose, onSaved }) {
-  const [taskAction, setTaskAction] = useState('');
-  const [plantScope, setPlantScope] = useState(lists.plants[0] || '');
-  const [priority, setPriority] = useState(lists.priorities[0] || 'Medium');
-  const [hqAssigned, setHqAssigned] = useState(lists.hqMembers[0] || '');
-  const [assignedDate, setAssignedDate] = useState(toISO(new Date()));
-  const [expectedCompletion, setExpectedCompletion] = useState('');
+  const [f, setF] = useState({
+    taskAction: '', plantScope: lists.plants[0] || '', priority: 'Medium',
+    hqAssigned: lists.hqMembers[0] || '', assignedDate: toISO(new Date()), expectedCompletion: '',
+  });
   const [saving, setSaving] = useState(false);
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }));
 
   const save = async () => {
     setSaving(true);
-    const res = await api('addHqTask', { taskAction, plantScope, priority, hqAssigned, assignedDate, expectedCompletion });
+    const res = await api('addHqTask', f);
     setSaving(false);
     if (res.ok) onSaved(); else alert(res.error || 'Gagal simpan.');
   };
 
   return (
-    <Modal title="Tambah Tugasan HQ" onClose={onClose}>
-      <Field label="Task / Action"><textarea className={inputCls} rows={2} value={taskAction} onChange={(e) => setTaskAction(e.target.value)} /></Field>
-      <Field label="Plant / Scope"><select className={inputCls} value={plantScope} onChange={(e) => setPlantScope(e.target.value)}>{lists.plants.map((p) => <option key={p}>{p}</option>)}</select></Field>
-      <Field label="Priority"><select className={inputCls} value={priority} onChange={(e) => setPriority(e.target.value)}>{lists.priorities.map((p) => <option key={p}>{p}</option>)}</select></Field>
-      <Field label="HQ Support Assigned"><select className={inputCls} value={hqAssigned} onChange={(e) => setHqAssigned(e.target.value)}>{lists.hqMembers.map((m) => <option key={m}>{m}</option>)}</select></Field>
-      <Field label="Assigned Date"><input type="date" className={inputCls} value={assignedDate} onChange={(e) => setAssignedDate(e.target.value)} /></Field>
-      <Field label="Expected Completion"><input type="date" className={inputCls} value={expectedCompletion} onChange={(e) => setExpectedCompletion(e.target.value)} /></Field>
-      <Button className="w-full" onClick={save} disabled={saving || !taskAction}>{saving ? 'Menyimpan...' : 'Simpan'}</Button>
+    <Modal title="Tugasan HQ terus" subtitle="Tugasan yang bukan datang dari permohonan plant" onClose={onClose}>
+      <Field label="Task / Action"><textarea className={inputCls} rows={2} value={f.taskAction} onChange={(e) => set('taskAction', e.target.value)} /></Field>
+      <Field label="Plant / Scope"><select className={inputCls} value={f.plantScope} onChange={(e) => set('plantScope', e.target.value)}>{lists.plants.map(p => <option key={p}>{p}</option>)}</select></Field>
+      <Field label="Priority"><select className={inputCls} value={f.priority} onChange={(e) => set('priority', e.target.value)}>{lists.priorities.map(p => <option key={p}>{p}</option>)}</select></Field>
+      <Field label="HQ assigned"><select className={inputCls} value={f.hqAssigned} onChange={(e) => set('hqAssigned', e.target.value)}>{lists.hqMembers.map(m => <option key={m}>{m}</option>)}</select></Field>
+      <div className="grid grid-cols-2 gap-x-3">
+        <Field label="Tarikh assign"><input type="date" className={inputCls} value={f.assignedDate} onChange={(e) => set('assignedDate', e.target.value)} /></Field>
+        <Field label="ETA siap"><input type="date" className={inputCls} value={f.expectedCompletion} onChange={(e) => set('expectedCompletion', e.target.value)} /></Field>
+      </div>
+      <Btn size="lg" className="w-full" onClick={save} disabled={saving || !f.taskAction}>{saving ? 'Menyimpan…' : 'Simpan'}</Btn>
     </Modal>
   );
 }
 
-function EditHqTaskModal({ row, lists, onClose, onSaved }) {
+function HqTaskModal({ row, lists, onClose, onSaved }) {
   const [status, setStatus] = useState(row.Status);
-  const [latestUpdate, setLatestUpdate] = useState(row.LatestUpdate || '');
-  const [completionDate, setCompletionDate] = useState(row.CompletionDate ? toISO(row.CompletionDate) : '');
-  const [remarks, setRemarks] = useState(row.ManagerRemarks || '');
+  const [latest, setLatest] = useState(row.LatestUpdate || '');
+  const [completion, setCompletion] = useState(row.CompletionDate ? toISO(row.CompletionDate) : '');
+  const [expected, setExpected] = useState(row.ExpectedCompletion ? toISO(row.ExpectedCompletion) : '');
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
     setSaving(true);
     const res = await api('updateHqTask', {
       id: row.ID,
-      fields: { Status: status, LatestUpdate: latestUpdate, CompletionDate: completionDate, ManagerRemarks: remarks },
+      fields: { Status: status, LatestUpdate: latest, CompletionDate: completion, ExpectedCompletion: expected },
     });
     setSaving(false);
     if (res.ok) onSaved(); else alert(res.error || 'Gagal simpan.');
   };
 
   return (
-    <Modal title={`Kemaskini Tugasan — ${row.PlantScope}`} onClose={onClose} wide>
-      <p className="text-sm bg-slate-50 border border-slate-200 rounded-lg p-3 mb-3">{row.TaskAction}</p>
-      <Field label="Status"><select className={inputCls} value={status} onChange={(e) => setStatus(e.target.value)}>{lists.attentionStatuses.map((s) => <option key={s}>{s}</option>)}</select></Field>
-      <Field label="Latest Update"><textarea className={inputCls} rows={2} value={latestUpdate} onChange={(e) => setLatestUpdate(e.target.value)} /></Field>
-      <Field label="Completion Date"><input type="date" className={inputCls} value={completionDate} onChange={(e) => setCompletionDate(e.target.value)} /></Field>
-      <Field label="Manager Remarks"><textarea className={inputCls} rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} /></Field>
-      <Button className="w-full" onClick={save} disabled={saving}>{saving ? 'Menyimpan...' : 'Simpan'}</Button>
+    <Modal title="Kemaskini tugasan" subtitle={`${row.PlantScope} · ${row.HQAssigned}`} onClose={onClose} wide>
+      <div className="bg-slate-50 rounded-xl p-3 mb-4 text-[13px] text-slate-700">{row.TaskAction}</div>
+      {row.LinkedAttentionID && (
+        <p className="text-[12px] text-blue-700 bg-blue-50 rounded-xl px-3 py-2 mb-4">
+          Linked dengan permohonan <b className="font-mono">{row.LinkedAttentionID}</b> — update di sini akan terus dipaparkan kepada plant &amp; manager.
+        </p>
+      )}
+      <div className="grid sm:grid-cols-2 sm:gap-x-4">
+        <Field label="Status"><select className={inputCls} value={status} onChange={(e) => setStatus(e.target.value)}>{lists.attentionStatuses.map(s => <option key={s}>{s}</option>)}</select></Field>
+        <Field label="ETA siap"><input type="date" className={inputCls} value={expected} onChange={(e) => setExpected(e.target.value)} /></Field>
+      </div>
+      <Field label="Update terkini" hint="Ringkas: apa yang dah dibuat / apa yang tertunggak">
+        <textarea className={inputCls} rows={3} value={latest} onChange={(e) => setLatest(e.target.value)} />
+      </Field>
+      <Field label="Tarikh siap"><input type="date" className={inputCls} value={completion} onChange={(e) => setCompletion(e.target.value)} /></Field>
+      <Btn size="lg" className="w-full" onClick={save} disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan update'}</Btn>
     </Modal>
   );
 }
 
-// ------------------------------------------------------------
-// Equipment Tracker
-// ------------------------------------------------------------
+// ============================================================
+// EQUIPMENT MOBILISATION
+// ============================================================
 function EquipmentView({ user, lists }) {
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [editRow, setEditRow] = useState(null);
-  const [showAdd, setShowAdd] = useState(false);
+  const isPlant = user.role === 'Supervisor';
   const canManage = user.role !== 'Supervisor';
+  const [equip, setEquip] = useState([]);
+  const [reqs, setReqs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState('tools');
+  const [editEquip, setEditEquip] = useState(null);
+  const [showEquipAdd, setShowEquipAdd] = useState(false);
+  const [requestFor, setRequestFor] = useState(null);
+  const [editReq, setEditReq] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await api('listEquipment');
-    if (res.ok) setRows(res.rows);
+    const [e, r] = await Promise.all([api('listEquipment'), api('listEquipmentRequests', {})]);
+    if (e.ok) setEquip(e.rows);
+    if (r.ok) setReqs(r.rows);
     setLoading(false);
   }, []);
-
   useEffect(() => { load(); }, [load]);
 
+  const statusColor = (s) => {
+    const v = String(s).toLowerCase();
+    if (v === 'available') return 'bg-emerald-50 text-emerald-700';
+    if (v === 'in use') return 'bg-blue-50 text-blue-700';
+    if (v === 'ready for pickup') return 'bg-violet-50 text-violet-700';
+    if (v === 'in transit') return 'bg-amber-50 text-amber-700';
+    if (v === 'under repair' || v === 'unavailable') return 'bg-rose-50 text-rose-600';
+    return 'bg-slate-100 text-slate-600';
+  };
+
   return (
-    <div className="space-y-4">
-      {canManage && <div className="flex justify-end"><Button onClick={() => setShowAdd(true)}>+ Tambah Equipment</Button></div>}
-      {loading ? <Spinner /> : rows.length === 0 ? <EmptyState text="Tiada equipment." /> : (
-        <div className="space-y-2">
-          {rows.map((r) => (
-            <Card key={r.ID} className={canManage ? 'cursor-pointer hover:border-teal-400' : ''}>
-              <div onClick={() => canManage && setEditRow(r)}>
-                <div className="flex justify-between items-start gap-2">
-                  <div className="font-bold text-slate-800">{r.EquipmentUnit}</div>
-                  <Badge color={r.Status === 'Available' ? 'green' : r.Status === 'Under Repair' ? 'red' : 'blue'}>{r.Status}</Badge>
-                </div>
-                <div className="text-sm text-slate-600 mt-1">Plant semasa: {r.CurrentPlant}</div>
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 mt-2">
-                  {r.PlannedFinish && <span>Planned finish: {fmtDate(r.PlannedFinish)}</span>}
-                  {r.NextRequestingPlant && <span>Next: {r.NextRequestingPlant}</span>}
-                  {r.HQLogisticsContact && <span>Contact: {r.HQLogisticsContact}</span>}
-                </div>
-              </div>
-            </Card>
+    <div className="max-w-5xl mx-auto space-y-4">
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-extrabold text-slate-800">Mobilisasi equipment</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Semak keberadaan tool &amp; tarikh sebelum mohon mobilisasi</p>
+          </div>
+          {canManage && tab === 'tools' && <Btn onClick={() => setShowEquipAdd(true)}>+ Equipment</Btn>}
+        </div>
+        <div className="flex gap-2 mt-4">
+          {[['tools', 'Keberadaan tool'], ['requests', `Permohonan (${reqs.filter(r => !['Returned', 'Rejected'].includes(String(r.Status))).length})`]].map(([k, l]) => (
+            <button key={k} onClick={() => setTab(k)}
+              className={`px-3.5 py-1.5 rounded-full text-[12.5px] font-bold ${tab === k ? 'bg-[#0b2a66] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{l}</button>
           ))}
         </div>
+      </Card>
+
+      {loading ? <Spinner /> : tab === 'tools' ? (
+        equip.length === 0 ? <Card><Empty text="Belum ada equipment didaftarkan." /></Card> : (
+          <div className="grid sm:grid-cols-2 gap-3">
+            {equip.map((r) => (
+              <Card key={r.ID} pad="p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-extrabold text-slate-800 text-[14.5px] truncate">{r.EquipmentUnit}</div>
+                    <div className="text-[12px] text-slate-500 mt-0.5">Sekarang di: <b className="text-slate-700">{r.CurrentPlant || '-'}</b></div>
+                  </div>
+                  <Pill className={statusColor(r.Status)}>{r.Status}</Pill>
+                </div>
+                <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-slate-100 text-[11.5px]">
+                  <div><div className="text-slate-400">Jangka siap</div><div className="font-semibold text-slate-700">{fmtDate(r.PlannedFinish)}</div></div>
+                  <div><div className="text-slate-400">Queue seterusnya</div><div className="font-semibold text-slate-700">{r.NextRequestingPlant || '—'}</div></div>
+                </div>
+                {r.HQLogisticsContact && <div className="text-[11.5px] text-slate-400 mt-2">Logistik HQ: {r.HQLogisticsContact}</div>}
+                <div className="flex gap-2 mt-3">
+                  <Btn size="sm" tone="outline" onClick={() => setRequestFor(r)}>Mohon mobilisasi</Btn>
+                  {canManage && <Btn size="sm" tone="ghost" onClick={() => setEditEquip(r)}>Kemaskini</Btn>}
+                </div>
+              </Card>
+            ))}
+          </div>
+        )
+      ) : (
+        reqs.length === 0 ? <Card><Empty text="Tiada permohonan equipment." /></Card> : (
+          <div className="space-y-3">
+            {reqs.map((r) => (
+              <Card key={r.ID} pad="p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono text-[11px] font-bold text-slate-400">{r.ID}</span>
+                      <Pill className={`bg-slate-100 ${statusTone(r.Status)}`}>{r.Status}</Pill>
+                    </div>
+                    <div className="font-bold text-slate-800 text-[14px] mt-1.5">{r.EquipmentUnit}</div>
+                    <div className="text-[12px] text-slate-500 mt-0.5">
+                      {r.RequestingPlant} · mohon {fmtDate(r.RequestDate)} · perlu {fmtDate(r.NeededDate)}
+                    </div>
+                    {r.Remarks && <div className="text-[12px] text-slate-500 mt-1">{r.Remarks}</div>}
+                  </div>
+                  {canManage && <Btn size="sm" onClick={() => setEditReq(r)}>Urus</Btn>}
+                </div>
+              </Card>
+            ))}
+          </div>
+        )
       )}
-      {showAdd && <EquipmentModal lists={lists} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />}
-      {editRow && <EquipmentModal row={editRow} lists={lists} onClose={() => setEditRow(null)} onSaved={() => { setEditRow(null); load(); }} />}
+
+      {showEquipAdd && <EquipmentModal lists={lists} onClose={() => setShowEquipAdd(false)} onSaved={() => { setShowEquipAdd(false); load(); }} />}
+      {editEquip && <EquipmentModal row={editEquip} lists={lists} onClose={() => setEditEquip(null)} onSaved={() => { setEditEquip(null); load(); }} />}
+      {requestFor && <EquipRequestModal equipment={requestFor} user={user} lists={lists} onClose={() => setRequestFor(null)} onSaved={() => { setRequestFor(null); setTab('requests'); load(); }} />}
+      {editReq && <EquipRequestManageModal row={editReq} lists={lists} onClose={() => setEditReq(null)} onSaved={() => { setEditReq(null); load(); }} />}
     </div>
   );
 }
 
 function EquipmentModal({ row, lists, onClose, onSaved }) {
-  const [unit, setUnit] = useState(row?.EquipmentUnit || lists.equipmentNames[0] || '');
-  const [plant, setPlant] = useState(row?.CurrentPlant || lists.plants[0] || '');
-  const [status, setStatus] = useState(row?.Status || lists.equipmentStatuses[0] || '');
-  const [plannedFinish, setPlannedFinish] = useState(row?.PlannedFinish ? toISO(row.PlannedFinish) : '');
-  const [nextPlant, setNextPlant] = useState(row?.NextRequestingPlant || '');
-  const [contact, setContact] = useState(row?.HQLogisticsContact || '');
-  const [remarks, setRemarks] = useState(row?.Remarks || '');
+  const [f, setF] = useState({
+    EquipmentUnit: row?.EquipmentUnit || (lists.equipmentNames[0] || ''),
+    CurrentPlant: row?.CurrentPlant || (lists.plants[0] || ''),
+    Status: row?.Status || (lists.equipmentStatuses[0] || ''),
+    PlannedFinish: row?.PlannedFinish ? toISO(row.PlannedFinish) : '',
+    NextRequestingPlant: row?.NextRequestingPlant || '',
+    HQLogisticsContact: row?.HQLogisticsContact || '',
+    Remarks: row?.Remarks || '',
+  });
   const [saving, setSaving] = useState(false);
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }));
 
   const save = async () => {
     setSaving(true);
-    const fields = { EquipmentUnit: unit, CurrentPlant: plant, Status: status, PlannedFinish: plannedFinish, NextRequestingPlant: nextPlant, HQLogisticsContact: contact, Remarks: remarks };
-    const res = await api('upsertEquipment', row ? { id: row.ID, fields } : { fields });
+    const res = await api('upsertEquipment', row ? { id: row.ID, fields: f } : { fields: f });
     setSaving(false);
     if (res.ok) onSaved(); else alert(res.error || 'Gagal simpan.');
   };
 
   return (
-    <Modal title={row ? 'Kemaskini Equipment' : 'Tambah Equipment'} onClose={onClose}>
-      <Field label="Equipment / Unit"><input className={inputCls} value={unit} onChange={(e) => setUnit(e.target.value)} list="equipList" /></Field>
-      <datalist id="equipList">{lists.equipmentNames.map((n) => <option key={n} value={n} />)}</datalist>
-      <Field label="Current Plant"><select className={inputCls} value={plant} onChange={(e) => setPlant(e.target.value)}>{lists.plants.map((p) => <option key={p}>{p}</option>)}</select></Field>
-      <Field label="Status"><select className={inputCls} value={status} onChange={(e) => setStatus(e.target.value)}>{lists.equipmentStatuses.map((s) => <option key={s}>{s}</option>)}</select></Field>
-      <Field label="Planned Finish"><input type="date" className={inputCls} value={plannedFinish} onChange={(e) => setPlannedFinish(e.target.value)} /></Field>
-      <Field label="Next Requesting Plant"><select className={inputCls} value={nextPlant} onChange={(e) => setNextPlant(e.target.value)}><option value="">-</option>{lists.plants.map((p) => <option key={p}>{p}</option>)}</select></Field>
-      <Field label="HQ Logistics Contact"><input className={inputCls} value={contact} onChange={(e) => setContact(e.target.value)} /></Field>
-      <Field label="Remarks"><input className={inputCls} value={remarks} onChange={(e) => setRemarks(e.target.value)} /></Field>
-      <Button className="w-full" onClick={save} disabled={saving || !unit}>{saving ? 'Menyimpan...' : 'Simpan'}</Button>
+    <Modal title={row ? 'Kemaskini equipment' : 'Tambah equipment'} onClose={onClose}>
+      <Field label="Equipment / Unit">
+        <input className={inputCls} value={f.EquipmentUnit} onChange={(e) => set('EquipmentUnit', e.target.value)} list="eqList" />
+        <datalist id="eqList">{lists.equipmentNames.map(n => <option key={n} value={n} />)}</datalist>
+      </Field>
+      <Field label="Plant semasa"><select className={inputCls} value={f.CurrentPlant} onChange={(e) => set('CurrentPlant', e.target.value)}>{lists.plants.map(p => <option key={p}>{p}</option>)}</select></Field>
+      <Field label="Status"><select className={inputCls} value={f.Status} onChange={(e) => set('Status', e.target.value)}>{lists.equipmentStatuses.map(s => <option key={s}>{s}</option>)}</select></Field>
+      <Field label="Jangka siap guna"><input type="date" className={inputCls} value={f.PlannedFinish} onChange={(e) => set('PlannedFinish', e.target.value)} /></Field>
+      <Field label="Plant seterusnya dalam queue">
+        <select className={inputCls} value={f.NextRequestingPlant} onChange={(e) => set('NextRequestingPlant', e.target.value)}>
+          <option value="">—</option>{lists.plants.map(p => <option key={p}>{p}</option>)}
+        </select>
+      </Field>
+      <Field label="Kontak logistik HQ"><input className={inputCls} value={f.HQLogisticsContact} onChange={(e) => set('HQLogisticsContact', e.target.value)} /></Field>
+      <Field label="Remarks"><input className={inputCls} value={f.Remarks} onChange={(e) => set('Remarks', e.target.value)} /></Field>
+      <Btn size="lg" className="w-full" onClick={save} disabled={saving || !f.EquipmentUnit}>{saving ? 'Menyimpan…' : 'Simpan'}</Btn>
     </Modal>
   );
 }
 
-// ------------------------------------------------------------
-// Weekly Manpower
-// ------------------------------------------------------------
-const DAYS = [
-  { key: 'mon', rep: 'monRep', label: 'Isnin' },
-  { key: 'tue', rep: 'tueRep', label: 'Selasa' },
-  { key: 'wed', rep: 'wedRep', label: 'Rabu' },
-  { key: 'thu', rep: 'thuRep', label: 'Khamis' },
-  { key: 'fri', rep: 'friRep', label: 'Jumaat' },
-  { key: 'sat', rep: 'satRep', label: 'Sabtu' },
-];
-function ManpowerView({ user, lists }) {
-  const [weekStart, setWeekStart] = useState(mondayOf(toISO(new Date())));
-  const [plant, setPlant] = useState(user.role === 'Supervisor' ? user.plant : (lists.plants[0] || ''));
+function EquipRequestModal({ equipment, user, lists, onClose, onSaved }) {
+  const isPlant = user.role === 'Supervisor';
+  const [plant, setPlant] = useState(isPlant ? user.plant : (lists.plants[0] || ''));
+  const [neededDate, setNeededDate] = useState('');
+  const [remarks, setRemarks] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    const res = await api('addEquipmentRequest', {
+      equipmentUnit: equipment.EquipmentUnit, requestingPlant: plant, neededDate, remarks,
+    });
+    setSaving(false);
+    if (res.ok) onSaved(); else alert(res.error || 'Gagal hantar.');
+  };
+
+  const busy = String(equipment.Status).toLowerCase() !== 'available';
+
+  return (
+    <Modal title="Mohon mobilisasi" subtitle={equipment.EquipmentUnit} onClose={onClose}>
+      <div className={`rounded-xl px-3 py-2.5 mb-4 text-[12.5px] ${busy ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-700'}`}>
+        {busy
+          ? <span>Tool ni sedang <b>{equipment.Status}</b> di <b>{equipment.CurrentPlant}</b>{equipment.PlannedFinish ? `, jangka siap ${fmtDate(equipment.PlannedFinish)}` : ''}. Permohonan anda akan masuk queue.</span>
+          : <span>Tool tersedia di <b>{equipment.CurrentPlant}</b> — boleh mohon mobilisasi terus.</span>}
+      </div>
+      {!isPlant && (
+        <Field label="Plant pemohon"><select className={inputCls} value={plant} onChange={(e) => setPlant(e.target.value)}>{lists.plants.map(p => <option key={p}>{p}</option>)}</select></Field>
+      )}
+      <Field label="Tarikh diperlukan"><input type="date" className={inputCls} value={neededDate} onChange={(e) => setNeededDate(e.target.value)} /></Field>
+      <Field label="Tujuan / Remarks"><textarea className={inputCls} rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="cth: Thermography scan blok B sebelum audit" /></Field>
+      <Btn size="lg" className="w-full" onClick={save} disabled={saving}>{saving ? 'Menghantar…' : 'Hantar permohonan'}</Btn>
+    </Modal>
+  );
+}
+
+function EquipRequestManageModal({ row, lists, onClose, onSaved }) {
+  const [status, setStatus] = useState(row.Status);
+  const [mobDate, setMobDate] = useState(row.MobilisationDate ? toISO(row.MobilisationDate) : '');
+  const [remarks, setRemarks] = useState(row.Remarks || '');
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    const res = await api('updateEquipmentRequest', {
+      id: row.ID, fields: { Status: status, MobilisationDate: mobDate, Remarks: remarks },
+    });
+    setSaving(false);
+    if (res.ok) onSaved(); else alert(res.error || 'Gagal simpan.');
+  };
+
+  return (
+    <Modal title="Urus permohonan" subtitle={`${row.ID} · ${row.EquipmentUnit}`} onClose={onClose}>
+      <div className="bg-slate-50 rounded-xl p-3 mb-4 text-[12.5px] text-slate-600">
+        {row.RequestingPlant} · dimohon oleh {row.RequestedBy} pada {fmtDate(row.RequestDate)}
+        {row.NeededDate ? ` · perlu ${fmtDate(row.NeededDate)}` : ''}
+      </div>
+      <Field label="Status"><select className={inputCls} value={status} onChange={(e) => setStatus(e.target.value)}>{lists.requestStatuses.map(s => <option key={s}>{s}</option>)}</select></Field>
+      <Field label="Tarikh mobilisasi" hint="Bila status = Mobilised, lokasi equipment akan auto berpindah ke plant pemohon.">
+        <input type="date" className={inputCls} value={mobDate} onChange={(e) => setMobDate(e.target.value)} />
+      </Field>
+      <Field label="Remarks"><textarea className={inputCls} rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} /></Field>
+      <Btn size="lg" className="w-full" onClick={save} disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan'}</Btn>
+    </Modal>
+  );
+}
+
+// ============================================================
+// MANPOWER (Isnin – Ahad)
+// ============================================================
+function ManpowerView({ user, lists, weekStart, setWeekStart }) {
+  const isPlant = user.role === 'Supervisor';
+  const [plant, setPlant] = useState(isPlant ? user.plant : (lists.plants[0] || ''));
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
-  const canEdit = user.role !== 'HQ';
 
   const load = useCallback(async () => {
-    if (!plant) return;
     setLoading(true);
     const res = await api('getManpower', { weekStart, plant });
     if (res.ok) {
-      setRows(res.rows.map((r) => ({
-        staffName: r.StaffName, mon: r.MonStatus, monRep: r.MonReplacement, tue: r.TueStatus, tueRep: r.TueReplacement,
-        wed: r.WedStatus, wedRep: r.WedReplacement, thu: r.ThuStatus, thuRep: r.ThuReplacement,
-        fri: r.FriStatus, friRep: r.FriReplacement, sat: r.SatStatus, satRep: r.SatReplacement,
-      })));
+      setRows(res.rows.map(r => {
+        const o = { staffName: r.StaffName };
+        DAY_KEYS.forEach(d => { o[d] = r[d + 'Status'] || 'W'; o[d + 'Rep'] = r[d + 'Replacement'] || ''; });
+        return o;
+      }));
     }
     setLoading(false);
   }, [weekStart, plant]);
-
   useEffect(() => { load(); }, [load]);
 
-  const addStaff = () => setRows((prev) => [...prev, { staffName: '', mon: 'W', tue: 'W', wed: 'W', thu: 'W', fri: 'W', sat: 'W' }]);
-  const removeStaff = (idx) => setRows((prev) => prev.filter((_, i) => i !== idx));
-  const updateCell = (idx, field, val) => setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, [field]: val } : r)));
-
-  const isRedRow = (r) => DAYS.some((d) => r[d.key] && r[d.key] !== 'W' && r[d.key] !== 'OFF' && !r[d.rep]);
+  const addStaff = () => {
+    const o = { staffName: '' };
+    DAY_KEYS.forEach(d => { o[d] = 'W'; o[d + 'Rep'] = ''; });
+    setRows(p => [...p, o]);
+  };
+  const upd = (i, k, v) => setRows(p => p.map((r, x) => x === i ? { ...r, [k]: v } : r));
+  const del = (i) => setRows(p => p.filter((_, x) => x !== i));
+  const isRed = (r) => DAY_KEYS.some(d => r[d] && r[d] !== 'W' && r[d] !== 'OFF' && !r[d + 'Rep']);
+  const headcount = (d) => rows.filter(r => r[d] === 'W' || (r[d] && r[d] !== 'OFF' && r[d + 'Rep'])).length;
 
   const save = async () => {
-    setSaving(true);
-    setMsg('');
-    const res = await api('saveManpower', { weekStart, plant, rows: rows.filter((r) => r.staffName) });
+    setSaving(true); setMsg('');
+    const res = await api('saveManpower', { weekStart, plant, rows: rows.filter(r => r.staffName) });
     setSaving(false);
-    setMsg(res.ok ? 'Berjaya disimpan.' : (res.error || 'Gagal simpan.'));
+    setMsg(res.ok ? '✓ Berjaya disimpan' : (res.error || 'Gagal simpan'));
+    setTimeout(() => setMsg(''), 4000);
   };
 
   return (
-    <div className="space-y-4">
+    <div className="max-w-5xl mx-auto space-y-4">
       <Card>
-        <div className="flex flex-wrap gap-3 items-end">
-          <Field label="Week Start (Isnin)"><input type="date" className={inputCls} value={weekStart} onChange={(e) => setWeekStart(mondayOf(e.target.value))} /></Field>
-          {user.role !== 'Supervisor' && (
-            <Field label="Plant"><select className={inputCls} value={plant} onChange={(e) => setPlant(e.target.value)}>{lists.plants.map((p) => <option key={p} value={p}>{p}</option>)}</select></Field>
-          )}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-extrabold text-slate-800">Manpower mingguan</h2>
+            <p className="text-xs text-slate-500 mt-0.5">{plant} · {fmtDate(weekStart)} – {fmtDate(addDays(weekStart, 6))} (Isnin – Ahad)</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {!isPlant && (
+              <select className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm" value={plant} onChange={(e) => setPlant(e.target.value)}>
+                {lists.plants.map(p => <option key={p}>{p}</option>)}
+              </select>
+            )}
+            <WeekPicker value={weekStart} onChange={setWeekStart} />
+          </div>
         </div>
-        <p className="text-xs text-slate-500">W = Kerja | OFF = Rehat | AL/UL/EL/MC/OTHER = Cuti. Baris merah = cuti tanpa replacement.</p>
+        <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 mt-4">
+          {DAY_KEYS.map(d => (
+            <div key={d} className="bg-slate-50 rounded-xl py-2 text-center">
+              <div className="text-[10px] font-bold text-slate-400 tracking-wide">{DAY_SHORT[d]}</div>
+              <div className={`text-[17px] font-extrabold ${headcount(d) < 2 ? 'text-rose-600' : 'text-slate-800'}`}>{headcount(d)}</div>
+            </div>
+          ))}
+        </div>
+        <p className="text-[11.5px] text-slate-400 mt-3">W = kerja · OFF = rehat · AL/UL/EL/MC/OTHER = cuti. Headcount kira W + staf cuti yang ada replacement. Baris merah = cuti tanpa replacement.</p>
       </Card>
 
       {loading ? <Spinner /> : (
         <div className="space-y-3">
-          {rows.map((r, idx) => (
-            <Card key={idx} className={isRedRow(r) ? 'border-rose-400 bg-rose-50' : ''}>
+          {rows.map((r, i) => (
+            <Card key={i} pad="p-4" className={isRed(r) ? '!border-rose-300 bg-rose-50/40' : ''}>
               <div className="flex items-center gap-2 mb-3">
-                <input className={`${inputCls} font-semibold`} placeholder="Nama staff" disabled={!canEdit} value={r.staffName} onChange={(e) => updateCell(idx, 'staffName', e.target.value)} />
-                {canEdit && <button onClick={() => removeStaff(idx)} className="text-rose-500 text-sm px-2">Buang</button>}
+                <input className={`${inputCls} font-bold`} placeholder="Nama staff" value={r.staffName} onChange={(e) => upd(i, 'staffName', e.target.value)} />
+                <button onClick={() => del(i)} className="text-rose-500 text-[12px] font-bold px-2 whitespace-nowrap">Buang</button>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-                {DAYS.map((d) => (
-                  <div key={d.key} className="border border-slate-200 rounded-lg p-2">
-                    <div className="text-xs font-bold text-slate-500 mb-1">{d.label}</div>
-                    <select disabled={!canEdit} className="w-full text-sm border border-slate-200 rounded px-1 py-1 mb-1" value={r[d.key] || 'W'} onChange={(e) => updateCell(idx, d.key, e.target.value)}>
-                      {lists.manpowerCodes.map((c) => <option key={c} value={c}>{c}</option>)}
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+                {DAY_KEYS.map(d => (
+                  <div key={d} className="border border-slate-200 rounded-xl p-2 bg-white">
+                    <div className="text-[10px] font-bold text-slate-400 mb-1.5 tracking-wide">{DAY_LABELS[d].toUpperCase()}</div>
+                    <select className="w-full text-[13px] font-semibold border border-slate-200 rounded-lg px-1.5 py-1.5 mb-1.5 bg-slate-50"
+                      value={r[d] || 'W'} onChange={(e) => upd(i, d, e.target.value)}>
+                      {lists.manpowerCodes.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
-                    <input disabled={!canEdit} placeholder="ganti" className="w-full text-sm border border-slate-200 rounded px-1 py-1" value={r[d.rep] || ''} onChange={(e) => updateCell(idx, d.rep, e.target.value)} />
+                    <input placeholder="ganti" className="w-full text-[12px] border border-slate-200 rounded-lg px-1.5 py-1.5"
+                      value={r[d + 'Rep'] || ''} onChange={(e) => upd(i, d + 'Rep', e.target.value)} />
                   </div>
                 ))}
               </div>
             </Card>
           ))}
-          {canEdit && (
-            <div className="flex flex-wrap items-center gap-3">
-              <Button variant="ghost" onClick={addStaff}>+ Tambah Staff</Button>
-              <Button onClick={save} disabled={saving}>{saving ? 'Menyimpan...' : 'Simpan Manpower'}</Button>
-              {msg && <span className="text-sm text-slate-600">{msg}</span>}
-            </div>
-          )}
+          <div className="flex flex-wrap items-center gap-3 pb-4">
+            <Btn tone="ghost" onClick={addStaff}>+ Tambah staff</Btn>
+            <Btn size="lg" onClick={save} disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan manpower'}</Btn>
+            {msg && <span className="text-sm font-semibold text-emerald-600">{msg}</span>}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-// ------------------------------------------------------------
-// Admin
-// ------------------------------------------------------------
-function AdminView({ lists, refreshLists }) {
+// ============================================================
+// TETAPAN (Manager full config)
+// ============================================================
+const LIST_COLUMNS = [
+  { key: 'Plants', label: 'Plant', field: 'plants' },
+  { key: 'HQMembers', label: 'HQ team', field: 'hqMembers' },
+  { key: 'EquipmentNames', label: 'Equipment', field: 'equipmentNames' },
+  { key: 'Priority', label: 'Priority', field: 'priorities' },
+  { key: 'AttentionStatus', label: 'Status permohonan', field: 'attentionStatuses' },
+  { key: 'EquipmentStatus', label: 'Status equipment', field: 'equipmentStatuses' },
+];
+function SettingsView({ lists, refreshLists }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editUser, setEditUser] = useState(null);
-  const [newPlant, setNewPlant] = useState('');
+  const [activeList, setActiveList] = useState(LIST_COLUMNS[0]);
+  const [newValue, setNewValue] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -856,99 +1489,195 @@ function AdminView({ lists, refreshLists }) {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const addPlant = async () => {
-    if (!newPlant.trim()) return;
-    await api('upsertPlant', { plantName: newPlant.trim() });
-    setNewPlant('');
+  const addValue = async () => {
+    if (!newValue.trim()) return;
+    const res = await api('upsertListItem', { column: activeList.key, value: newValue.trim() });
+    if (!res.ok) return alert(res.error);
+    setNewValue('');
     refreshLists();
   };
 
+  const roleTone = { Manager: 'bg-blue-50 text-blue-700', Supervisor: 'bg-emerald-50 text-emerald-700', HQ: 'bg-violet-50 text-violet-700', Admin: 'bg-slate-200 text-slate-700' };
+
   return (
-    <div className="space-y-4">
+    <div className="max-w-5xl mx-auto grid lg:grid-cols-2 gap-4 items-start">
       <Card>
-        <div className="flex justify-between items-center mb-3">
-          <h3 className="font-bold text-slate-700">Users</h3>
-          <Button onClick={() => setEditUser({})}>+ Tambah User</Button>
-        </div>
-        {loading ? <Spinner /> : (
-          <div className="space-y-2">
-            {users.map((u) => (
-              <div key={u.ID} className="border border-slate-200 rounded-xl p-3 flex flex-wrap items-center gap-3 text-sm cursor-pointer hover:border-teal-400" onClick={() => setEditUser(u)}>
-                <div className="font-semibold w-32">{u.Name}</div>
-                <Badge color="blue">{u.Role}</Badge>
-                <div className="text-slate-500">{u.Plant}</div>
-                <Badge color={String(u.Active).toUpperCase() === 'N' ? 'red' : 'green'}>{String(u.Active).toUpperCase() === 'N' ? 'Tidak Aktif' : 'Aktif'}</Badge>
+        <SectionTitle action={<Btn size="sm" onClick={() => setEditUser({})}>+ User</Btn>}>Pengguna sistem</SectionTitle>
+        {loading ? <Spinner small /> : (
+          <div className="divide-y divide-slate-100">
+            {users.map(u => (
+              <div key={u.ID} className="py-3 flex items-center gap-3 cursor-pointer hover:bg-slate-50/70 -mx-2 px-2 rounded-xl" onClick={() => setEditUser(u)}>
+                <div className="w-9 h-9 rounded-full bg-[#1d4ed8] text-white text-[12px] font-extrabold flex items-center justify-center shrink-0">{initials(u.Name)}</div>
+                <div className="min-w-0 flex-1">
+                  <div className="font-bold text-[13.5px] text-slate-800 truncate">{u.Name}</div>
+                  <div className="text-[11.5px] text-slate-400">{u.Plant}</div>
+                </div>
+                <Pill className={roleTone[u.Role] || 'bg-slate-100 text-slate-600'}>{u.Role}</Pill>
+                {String(u.Active).toUpperCase() === 'N' && <Pill className="bg-rose-50 text-rose-600">Tidak aktif</Pill>}
               </div>
             ))}
           </div>
         )}
+        <p className="text-[11.5px] text-slate-400 mt-4 bg-slate-50 rounded-xl px-3 py-2">
+          Nama user role <b>HQ</b> kena sama dengan nama dalam senarai HQ team, supaya tugasan yang di-assign masuk ke akaun dia.
+        </p>
       </Card>
 
       <Card>
-        <h3 className="font-bold text-slate-700 mb-3">Plants</h3>
-        <div className="flex flex-wrap gap-2 mb-3">
-          {lists.plants.map((p) => <Badge key={p} color="slate">{p}</Badge>)}
+        <SectionTitle>Senarai boleh edit</SectionTitle>
+        <div className="flex flex-wrap gap-2 mb-4">
+          {LIST_COLUMNS.map(c => (
+            <button key={c.key} onClick={() => setActiveList(c)}
+              className={`px-3 py-1.5 rounded-full text-[12px] font-bold ${activeList.key === c.key ? 'bg-[#0b2a66] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{c.label}</button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2 mb-4">
+          {(lists[activeList.field] || []).map(v => (
+            <Pill key={v} className="bg-slate-100 text-slate-700">{v}</Pill>
+          ))}
         </div>
         <div className="flex gap-2">
-          <input className={inputCls} placeholder="Nama plant baru" value={newPlant} onChange={(e) => setNewPlant(e.target.value)} />
-          <Button onClick={addPlant}>Tambah</Button>
+          <input className={inputCls} placeholder={`Tambah ${activeList.label.toLowerCase()} baru`} value={newValue}
+            onChange={(e) => setNewValue(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addValue()} />
+          <Btn onClick={addValue}>Tambah</Btn>
         </div>
+        <p className="text-[11.5px] text-slate-400 mt-3">Senarai ni disimpan dalam tab <b>Lists</b> kat Google Sheet — boleh edit terus di sana juga.</p>
       </Card>
 
-      {editUser && (
-        <UserModal user={editUser} lists={lists} onClose={() => setEditUser(null)} onSaved={() => { setEditUser(null); load(); }} />
-      )}
+      {editUser && <UserModal user={editUser} lists={lists} onClose={() => setEditUser(null)} onSaved={() => { setEditUser(null); load(); }} />}
     </div>
   );
 }
 
 function UserModal({ user, lists, onClose, onSaved }) {
-  const [name, setName] = useState(user.Name || '');
-  const [plant, setPlant] = useState(user.Plant || lists.plants[0] || '');
-  const [role, setRole] = useState(user.Role || 'Supervisor');
-  const [pin, setPin] = useState(user.PIN || '');
-  const [active, setActive] = useState(String(user.Active || 'Y').toUpperCase() !== 'N');
+  const [f, setF] = useState({
+    Name: user.Name || '', Plant: user.Plant || 'ALL', Role: user.Role || 'Supervisor',
+    PIN: user.PIN || '', Active: String(user.Active || 'Y').toUpperCase() !== 'N',
+  });
   const [saving, setSaving] = useState(false);
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }));
 
   const save = async () => {
     setSaving(true);
-    const fields = { Name: name, Plant: plant, Role: role, PIN: pin, Active: active ? 'Y' : 'N' };
+    const fields = { Name: f.Name, Plant: f.Plant, Role: f.Role, PIN: f.PIN, Active: f.Active ? 'Y' : 'N' };
     const res = await api('upsertUser', user.ID ? { id: user.ID, fields } : { fields });
     setSaving(false);
     if (res.ok) onSaved(); else alert(res.error || 'Gagal simpan.');
   };
 
   return (
-    <Modal title={user.ID ? 'Kemaskini User' : 'Tambah User'} onClose={onClose}>
-      <Field label="Nama"><input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} /></Field>
-      <Field label="Role">
-        <select className={inputCls} value={role} onChange={(e) => setRole(e.target.value)}>
+    <Modal title={user.ID ? 'Kemaskini user' : 'Tambah user'} onClose={onClose}>
+      <Field label="Nama"><input className={inputCls} value={f.Name} onChange={(e) => set('Name', e.target.value)} /></Field>
+      <Field label="Peranan" hint="Manager = akses penuh · Supervisor = plant sendiri · HQ = tugasan sendiri">
+        <select className={inputCls} value={f.Role} onChange={(e) => set('Role', e.target.value)}>
           <option>Supervisor</option><option>Manager</option><option>HQ</option><option>Admin</option>
         </select>
       </Field>
       <Field label="Plant">
-        <select className={inputCls} value={plant} onChange={(e) => setPlant(e.target.value)}>
-          <option value="ALL">ALL (Manager/Admin/HQ)</option>
-          {lists.plants.map((p) => <option key={p} value={p}>{p}</option>)}
+        <select className={inputCls} value={f.Plant} onChange={(e) => set('Plant', e.target.value)}>
+          <option value="ALL">ALL (Manager / HQ)</option>
+          {lists.plants.map(p => <option key={p} value={p}>{p}</option>)}
         </select>
       </Field>
-      <Field label="PIN"><input className={inputCls} value={pin} onChange={(e) => setPin(e.target.value)} /></Field>
-      <label className="flex items-center gap-2 text-sm mb-3">
-        <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Aktif
+      <Field label="PIN"><input className={inputCls} value={f.PIN} onChange={(e) => set('PIN', e.target.value)} inputMode="numeric" /></Field>
+      <label className="flex items-center gap-2 text-sm mb-4 font-semibold text-slate-600">
+        <input type="checkbox" checked={f.Active} onChange={(e) => set('Active', e.target.checked)} className="w-4 h-4" /> Akaun aktif
       </label>
-      <Button className="w-full" onClick={save} disabled={saving || !name || !pin}>{saving ? 'Menyimpan...' : 'Simpan'}</Button>
+      <Btn size="lg" className="w-full" onClick={save} disabled={saving || !f.Name || !f.PIN}>{saving ? 'Menyimpan…' : 'Simpan'}</Btn>
     </Modal>
   );
 }
 
-// ------------------------------------------------------------
-// App shell
-// ------------------------------------------------------------
-function TABS_FOR_ROLE(role) {
-  // Manager has full config rights (same as Admin) — this app is built manager-first.
-  if (role === 'Admin' || role === 'Manager') return ['Dashboard', 'Supervisor Update', 'Manager Attention', 'HQ Tasks', 'Equipment', 'Manpower', 'Users & Plants'];
-  if (role === 'HQ') return ['HQ Tasks', 'Equipment'];
-  return ['Supervisor Update', 'Manager Attention', 'Equipment', 'Manpower']; // Supervisor
+// ============================================================
+// PANDUAN
+// ============================================================
+function GuideView() {
+  const [data, setData] = useState(null);
+  useEffect(() => { (async () => { const res = await api('getGuide'); if (res.ok) setData(res); })(); }, []);
+  if (!data) return <Spinner />;
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-4">
+      <div className="hero rounded-[22px] p-5 text-white">
+        <h2 className="text-lg font-extrabold">Panduan ringkas</h2>
+        <p className="text-blue-200 text-xs mt-1">Tracker untuk update plant, permohonan perhatian manager, tugasan HQ, mobilisasi equipment dan manpower.</p>
+      </div>
+
+      <Card>
+        <SectionTitle>Siapa isi apa</SectionTitle>
+        <div className="overflow-x-auto no-bar">
+          <table className="w-full text-[13px] min-w-[640px]">
+            <thead>
+              <tr className="text-[11px] uppercase tracking-wide text-slate-400 border-b border-slate-100">
+                <th className="text-left font-bold pb-2 pr-3">Bahagian</th>
+                <th className="text-left font-bold pb-2 pr-3">Plant isi</th>
+                <th className="text-left font-bold pb-2 pr-3">Manager / HQ isi</th>
+                <th className="text-left font-bold pb-2">Bila</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.guide.map((g, i) => (
+                <tr key={i} className="border-b border-slate-50 align-top">
+                  <td className="py-3 pr-3 font-bold text-slate-800">{g.Tab}</td>
+                  <td className="py-3 pr-3 text-slate-600">{g.SupervisorUpdates}</td>
+                  <td className="py-3 pr-3 text-slate-600">{g.ManagerHQUpdates}</td>
+                  <td className="py-3 text-slate-500">{g.When}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <Card>
+        <SectionTitle>Empat peraturan asas</SectionTitle>
+        <div className="space-y-3">
+          {data.rules.map((r, i) => (
+            <div key={i} className="flex gap-3">
+              <div className="w-7 h-7 shrink-0 rounded-full bg-[#e5342b] text-white text-[12px] font-extrabold flex items-center justify-center">{r.No}</div>
+              <div>
+                <div className="font-bold text-[13.5px] text-slate-800">{r.Rule}</div>
+                <div className="text-[12.5px] text-slate-500 mt-0.5">{r.Detail}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <Card>
+        <SectionTitle>Aliran kerja</SectionTitle>
+        <div className="space-y-0">
+          {[
+            { t: 'Plant hantar permohonan', d: 'Supervisor isi perkara, priority — sistem jana ID (cth AMSA_07092026)' },
+            { t: 'Manager assign HQ support', d: 'Pilih HQ team, tarikh assign & ETA — tugasan HQ terbina automatik' },
+            { t: 'HQ team update progress', d: 'HQ isi update terkini & tarikh siap' },
+            { t: 'Plant & manager nampak status', d: 'Update HQ terus dipaparkan pada permohonan asal' },
+          ].map((s, i, arr) => (
+            <div key={i} className="flex gap-3">
+              <div className="flex flex-col items-center">
+                <div className="w-3 h-3 rounded-full bg-[#1d4ed8] mt-1.5"></div>
+                {i < arr.length - 1 && <div className="w-[2px] flex-1 min-h-[34px] bg-blue-200"></div>}
+              </div>
+              <div className="pb-4">
+                <div className="text-[13.5px] font-bold text-slate-800">{s.t}</div>
+                <div className="text-[12px] text-slate-500 mt-0.5">{s.d}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================
+// APP SHELL
+// ============================================================
+function tabsForRole(role) {
+  if (role === 'Manager' || role === 'Admin')
+    return ['Utama', 'Attention', 'Tugasan HQ', 'Equipment', 'Manpower', 'Update Mingguan', 'Tetapan', 'Panduan'];
+  if (role === 'HQ') return ['Utama', 'Tugasan HQ', 'Equipment', 'Panduan'];
+  return ['Utama', 'Update Mingguan', 'Permohonan', 'Equipment', 'Manpower', 'Panduan'];
 }
 
 function App() {
@@ -957,73 +1686,115 @@ function App() {
     return raw ? JSON.parse(raw) : null;
   });
   const [lists, setLists] = useState(null);
-  const [tab, setTab] = useState('');
+  const [tab, setTab] = useState('Utama');
+  const [weekStart, setWeekStart] = useState(mondayOf(toISO(new Date())));
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const loadLists = useCallback(async () => {
     const res = await api('getLists');
     if (res.ok) setLists(res);
   }, []);
-
-  useEffect(() => {
-    if (user) {
-      loadLists();
-    }
-  }, [user, loadLists]);
-
-  useEffect(() => {
-    if (user && !tab) setTab(TABS_FOR_ROLE(user.role)[0]);
-  }, [user]);
+  useEffect(() => { if (user) loadLists(); }, [user, loadLists]);
 
   const logout = () => {
-    localStorage.removeItem('pt_token');
-    localStorage.removeItem('pt_user');
-    setUser(null);
+    localStorage.removeItem('pt_token'); localStorage.removeItem('pt_user');
+    setUser(null); setLists(null); setTab('Utama');
   };
 
-  if (API_BASE_URL.includes('PASTE_YOUR')) {
+  if (API_BASE_URL.indexOf('PASTE_YOUR') !== -1) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-6 bg-amber-50">
+      <div className="min-h-screen flex items-center justify-center p-6">
         <Card className="max-w-md">
-          <h2 className="font-bold text-amber-700 mb-2">⚠️ Setup belum lengkap</h2>
-          <p className="text-sm text-slate-600">Tukar <code>API_BASE_URL</code> dalam index.html kepada Google Apps Script Web App URL kau (ends with <code>/exec</code>). Rujuk SETUP_PANDUAN.md.</p>
+          <h2 className="font-extrabold text-[#e5342b] mb-2">Setup belum lengkap</h2>
+          <p className="text-sm text-slate-600">Tukar <code className="bg-slate-100 px-1 rounded">API_BASE_URL</code> dalam index.html kepada Google Apps Script Web App URL kau (berakhir dengan <code className="bg-slate-100 px-1 rounded">/exec</code>). Rujuk SETUP_PANDUAN.md.</p>
         </Card>
       </div>
     );
   }
 
-  if (!user) return <LoginScreen onLogin={(u) => setUser(u)} />;
-  if (!lists) return <Spinner />;
+  if (!user) return <LoginScreen onLogin={setUser} />;
+  if (!lists) return <div className="min-h-screen flex items-center justify-center"><Spinner /></div>;
 
-  const tabs = TABS_FOR_ROLE(user.role);
+  const tabs = tabsForRole(user.role);
+  const isPlant = user.role === 'Supervisor';
+
+  const renderTab = () => {
+    switch (tab) {
+      case 'Utama':
+        if (user.role === 'HQ') return <HqDashboard user={user} lists={lists} goTo={setTab} />;
+        if (isPlant) return <PlantDashboard user={user} lists={lists} weekStart={weekStart} setWeekStart={setWeekStart} goTo={setTab} />;
+        return <ManagerDashboard user={user} lists={lists} weekStart={weekStart} setWeekStart={setWeekStart} goTo={setTab} />;
+      case 'Update Mingguan': return <WeeklyUpdateView user={user} lists={lists} weekStart={weekStart} setWeekStart={setWeekStart} />;
+      case 'Attention':
+      case 'Permohonan': return <AttentionView user={user} lists={lists} goTo={setTab} />;
+      case 'Tugasan HQ': return <HqTasksView user={user} lists={lists} />;
+      case 'Equipment': return <EquipmentView user={user} lists={lists} />;
+      case 'Manpower': return <ManpowerView user={user} lists={lists} weekStart={weekStart} setWeekStart={setWeekStart} />;
+      case 'Tetapan': return <SettingsView lists={lists} refreshLists={loadLists} />;
+      case 'Panduan': return <GuideView />;
+      default: return null;
+    }
+  };
 
   return (
     <div className="min-h-screen pb-10">
-      <div className="bg-teal-800 text-white sticky top-0 z-30 shadow">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex justify-between items-center">
-          <div>
-            <div className="font-bold leading-tight">Plant Tracker</div>
-            <div className="text-xs text-teal-100">{user.name} · {user.role} · {user.plant}</div>
+      {/* TOP BAR */}
+      <div className="sticky top-0 z-40 px-3 pt-3 bg-[#e9f0fb]/90 backdrop-blur">
+        <div className="max-w-[1320px] mx-auto bg-white rounded-[20px] border border-slate-200/70 shadow-[0_1px_3px_rgba(15,23,42,0.05)] px-3 sm:px-4 py-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 shrink-0">
+              <div className="w-9 h-9 rounded-full bg-[#e5342b] text-white flex items-center justify-center font-extrabold text-lg shadow-sm">+</div>
+              <span className="font-extrabold text-[14px] sm:text-[15px] text-slate-800 xl:block">PlantOps</span>
+            </div>
+
+            <div className="hidden lg:flex flex-1 min-w-0 mx-3 justify-center">
+              <div className="flex bg-slate-100 rounded-full p-1 gap-0.5 overflow-x-auto no-bar max-w-full">
+              {tabs.map(t => (
+                <button key={t} onClick={() => setTab(t)}
+                  className={`px-3 py-1.5 rounded-full text-[12px] font-bold whitespace-nowrap transition ${tab === t ? 'bg-[#0b2a66] text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
+                  {t}
+                </button>
+              ))}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="hidden sm:flex flex-col items-end bg-slate-50 border border-slate-200 rounded-full px-3 py-1">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 leading-none">Peranan</span>
+                <span className="text-[12.5px] font-bold text-slate-700 leading-tight">{user.role}</span>
+              </div>
+              <button onClick={() => setMenuOpen(!menuOpen)} className="w-9 h-9 rounded-full bg-[#1d4ed8] text-white text-[12px] font-extrabold flex items-center justify-center">
+                {initials(user.name)}
+              </button>
+            </div>
           </div>
-          <button onClick={logout} className="text-sm bg-teal-900/50 px-3 py-1.5 rounded-lg hover:bg-teal-900">Log Keluar</button>
+
+          {/* mobile tabs */}
+          <div className="lg:hidden flex gap-1.5 mt-2.5 overflow-x-auto no-bar pb-0.5">
+            {tabs.map(t => (
+              <button key={t} onClick={() => setTab(t)}
+                className={`px-3 py-1.5 rounded-full text-[12px] font-bold whitespace-nowrap transition ${tab === t ? 'bg-[#0b2a66] text-white' : 'bg-slate-100 text-slate-600'}`}>
+                {t}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="max-w-5xl mx-auto px-2 flex gap-1 overflow-x-auto pb-2">
-          {tabs.map((t) => (
-            <button key={t} onClick={() => setTab(t)}
-              className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-semibold ${tab === t ? 'bg-white text-teal-800' : 'text-teal-100 hover:bg-teal-700'}`}>
-              {t}
-            </button>
-          ))}
-        </div>
+
+        {menuOpen && (
+          <div className="max-w-[1320px] mx-auto flex justify-end">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-lg mt-2 p-3 w-56">
+              <div className="px-2 pb-2 mb-2 border-b border-slate-100">
+                <div className="font-bold text-[13.5px] text-slate-800">{user.name}</div>
+                <div className="text-[11.5px] text-slate-400">{user.role} · {user.plant}</div>
+              </div>
+              <button onClick={logout} className="w-full text-left px-2 py-2 rounded-xl text-[13px] font-semibold text-rose-600 hover:bg-rose-50">Log keluar</button>
+            </div>
+          </div>
+        )}
       </div>
 
-      <div className="max-w-5xl mx-auto p-4">
-        {tab === 'Dashboard' && <DashboardView user={user} lists={lists} />}
-        {tab === 'Supervisor Update' && <SupervisorUpdateView user={user} lists={lists} />}
-        {tab === 'Manager Attention' && <ManagerAttentionView user={user} lists={lists} />}
-        {tab === 'HQ Tasks' && <HqTasksView user={user} lists={lists} />}
-        {tab === 'Equipment' && <EquipmentView user={user} lists={lists} />}
-        {tab === 'Manpower' && <ManpowerView user={user} lists={lists} />}
-        {tab === 'Users & Plants' && <AdminView lists={lists} refreshLists={loadLists} />}
+      <div className="max-w-[1320px] mx-auto px-3 pt-4">
+        {renderTab()}
       </div>
     </div>
   );
@@ -1034,9 +1805,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 
 <script>
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').catch(() => {});
-    });
+    window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
   }
 </script>
 </body>
